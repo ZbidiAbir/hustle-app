@@ -1,0 +1,712 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
+import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
+import {
+  MapPin,
+  Calendar,
+  Users,
+  Clock,
+  DollarSign,
+  Briefcase,
+  Zap,
+  MessageSquare,
+  Edit,
+  Archive,
+  ChevronRight,
+  Star,
+  CheckCircle,
+  XCircle,
+  AlertCircle,
+  Share2,
+  Flag,
+  MoreHorizontal,
+} from "lucide-react";
+
+type Job = {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  fixed_rate?: number;
+  min_rate?: number;
+  max_rate?: number;
+  hourly_rate?: number;
+  pay_type: string;
+  status: string;
+  created_at: string;
+  images: string[];
+  worker_id: string | null;
+  location: string;
+  date: string;
+  level_required: string;
+  urgency: string;
+  building_access?: string;
+  project_size?: string;
+  skills?: string[];
+  materials_provided?: boolean;
+  coi_url?: string;
+};
+
+type Application = {
+  id: string;
+  worker_id: string;
+  status: string;
+  created_at: string;
+  message?: string;
+  worker?: {
+    full_name: string;
+    email: string;
+    avatar_url?: string;
+  };
+};
+
+type Worker = {
+  id: string;
+  full_name: string;
+  email: string;
+  avatar_url?: string;
+  rating?: number;
+  jobs_completed?: number;
+  phone?: string;
+};
+
+export default function JobDetailPage() {
+  const [job, setJob] = useState<Job | null>(null);
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [assignedWorker, setAssignedWorker] = useState<Worker | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<
+    "details" | "applications" | "messages"
+  >("details");
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [showShareMenu, setShowShareMenu] = useState(false);
+  const params = useParams();
+  const router = useRouter();
+  const jobId = params.id as string;
+
+  useEffect(() => {
+    fetchJobDetails();
+  }, [jobId]);
+
+  const fetchJobDetails = async () => {
+    try {
+      setLoading(true);
+
+      // 1. Récupérer les détails du job
+      const { data: jobData, error: jobError } = await supabase
+        .from("jobs")
+        .select("*")
+        .eq("id", jobId)
+        .single();
+
+      if (jobError) throw jobError;
+      setJob(jobData);
+
+      // 2. Récupérer les applications pour ce job
+      const { data: appsData, error: appsError } = await supabase
+        .from("applications")
+        .select("*")
+        .eq("job_id", jobId)
+        .order("created_at", { ascending: false });
+
+      if (appsError) throw appsError;
+
+      if (appsData && appsData.length > 0) {
+        // 3. Récupérer les profils des workers séparément
+        const workerIds = appsData.map((app) => app.worker_id);
+        const { data: profilesData, error: profilesError } = await supabase
+          .from("profiles")
+          .select("id, full_name, email, avatar_url")
+          .in("id", workerIds);
+
+        if (profilesError) throw profilesError;
+
+        // 4. Combiner les données
+        const profilesMap = new Map(profilesData?.map((p) => [p.id, p]) || []);
+
+        const appsWithWorkers = appsData.map((app) => ({
+          ...app,
+          worker: profilesMap.get(app.worker_id) || {
+            full_name: "Unknown Worker",
+            email: "unknown@email.com",
+          },
+        }));
+
+        setApplications(appsWithWorkers);
+      }
+
+      // 5. Si un worker est assigné, récupérer ses détails
+      if (jobData.worker_id) {
+        const { data: workerData } = await supabase
+          .from("profiles")
+          .select("id, full_name, email, avatar_url")
+          .eq("id", jobData.worker_id)
+          .single();
+
+        setAssignedWorker(workerData);
+      }
+    } catch (error) {
+      console.error("Error fetching job details:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCancelJob = async () => {
+    try {
+      const { error } = await supabase
+        .from("jobs")
+        .update({ status: "cancelled" })
+        .eq("id", jobId);
+
+      if (error) throw error;
+
+      alert("✅ Job cancelled successfully");
+      fetchJobDetails();
+      setShowCancelConfirm(false);
+    } catch (error: any) {
+      alert(`❌ Error: ${error.message}`);
+    }
+  };
+
+  const handleShare = () => {
+    navigator.clipboard.writeText(window.location.href);
+    alert("✅ Link copied to clipboard!");
+    setShowShareMenu(false);
+  };
+
+  const getStatusBadge = (status: string) => {
+    const statusConfig = {
+      open: {
+        color: "bg-emerald-50 text-emerald-700 border-emerald-200",
+        icon: "🔍",
+        text: "Open",
+      },
+      assigned: {
+        color: "bg-blue-50 text-blue-700 border-blue-200",
+        icon: "👤",
+        text: "Assigned",
+      },
+      in_progress: {
+        color: "bg-amber-50 text-amber-700 border-amber-200",
+        icon: "⚙️",
+        text: "In Progress",
+      },
+      completed: {
+        color: "bg-purple-50 text-purple-700 border-purple-200",
+        icon: "✅",
+        text: "Completed",
+      },
+      cancelled: {
+        color: "bg-rose-50 text-rose-700 border-rose-200",
+        icon: "❌",
+        text: "Cancelled",
+      },
+    };
+    const config =
+      statusConfig[status as keyof typeof statusConfig] || statusConfig.open;
+    return (
+      <span
+        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border ${config.color}`}
+      >
+        <span>{config.icon}</span>
+        <span>{config.text}</span>
+      </span>
+    );
+  };
+
+  const getApplicationStatusBadge = (status: string) => {
+    switch (status) {
+      case "pending":
+        return (
+          <span className="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded-full">
+            Pending
+          </span>
+        );
+      case "accepted":
+        return (
+          <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full">
+            Accepted
+          </span>
+        );
+      case "rejected":
+        return (
+          <span className="px-2 py-1 bg-red-100 text-red-700 text-xs rounded-full">
+            Rejected
+          </span>
+        );
+      default:
+        return null;
+    }
+  };
+
+  const formatPrice = (job: Job) => {
+    switch (job.pay_type) {
+      case "Fixed":
+        return `$${job.fixed_rate}`;
+      case "Range":
+        return `$${job.min_rate} - $${job.max_rate}`;
+      case "Hourly":
+        return `$${job.hourly_rate}/hr`;
+      default:
+        return "Price TBD";
+    }
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString("en-US", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+  };
+
+  const formatDateTime = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-2 border-gray-200 border-t-purple-600"></div>
+      </div>
+    );
+  }
+
+  if (!job) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="text-center max-w-md mx-auto p-8">
+          <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">
+            Job Not Found
+          </h2>
+          <p className="text-gray-600 mb-6">
+            The job you're looking for doesn't exist or has been removed.
+          </p>
+          <Link
+            href="/customer/my-jobs"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition"
+          >
+            Back to My Jobs
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  const pendingApplications = applications.filter(
+    (a) => a.status === "pending"
+  );
+  const acceptedApplication = applications.find((a) => a.status === "accepted");
+
+  return (
+    <div className="min-h-screen bg-white">
+      {/* Header */}
+      <div className="border-b border-gray-200 bg-white sticky top-0 z-10">
+        <div className="px-4 py-4">
+          <div className="flex items-center gap-4 mb-3">
+            <Link
+              href="/customer/my-jobs"
+              className="p-2 hover:bg-gray-100 rounded-lg transition"
+            >
+              <ChevronRight className="w-5 h-5 text-gray-600 rotate-180" />
+            </Link>
+            <h1 className="text-xl font-semibold text-gray-900">Job Details</h1>
+          </div>
+
+          {/* Status and Actions */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              {getStatusBadge(job.status)}
+              <span className="text-sm text-gray-500">
+                Posted {formatDateTime(job.created_at)}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              {/* Share button */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowShareMenu(!showShareMenu)}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition"
+                >
+                  <Share2 className="w-4 h-4 text-gray-600" />
+                </button>
+                {showShareMenu && (
+                  <div className="absolute right-0 mt-1 w-48 bg-white rounded-xl shadow-lg border z-20">
+                    <button
+                      onClick={handleShare}
+                      className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm"
+                    >
+                      Copy link
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* More actions */}
+              {job.status === "open" && (
+                <button
+                  onClick={() => setShowCancelConfirm(true)}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition text-rose-600"
+                >
+                  <Archive className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex gap-4 px-4 border-b">
+          <button
+            onClick={() => setActiveTab("details")}
+            className={`pb-2 text-sm font-medium transition border-b-2 ${
+              activeTab === "details"
+                ? "text-purple-600 border-purple-600"
+                : "text-gray-500 border-transparent hover:text-gray-700"
+            }`}
+          >
+            Details
+          </button>
+          <button
+            onClick={() => setActiveTab("applications")}
+            className={`pb-2 text-sm font-medium transition border-b-2 flex items-center gap-2 ${
+              activeTab === "applications"
+                ? "text-purple-600 border-purple-600"
+                : "text-gray-500 border-transparent hover:text-gray-700"
+            }`}
+          >
+            Applications
+            {pendingApplications.length > 0 && (
+              <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 text-xs rounded-full">
+                {pendingApplications.length}
+              </span>
+            )}
+          </button>
+          {assignedWorker && (
+            <button
+              onClick={() => setActiveTab("messages")}
+              className={`pb-2 text-sm font-medium transition border-b-2 ${
+                activeTab === "messages"
+                  ? "text-purple-600 border-purple-600"
+                  : "text-gray-500 border-transparent hover:text-gray-700"
+              }`}
+            >
+              Messages
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="px-4 py-6">
+        {activeTab === "details" && (
+          <div className="space-y-6">
+            {/* Title and Price */}
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                {job.title}
+              </h2>
+              <div className="flex items-baseline gap-2">
+                <span className="text-3xl font-bold text-gray-900">
+                  {formatPrice(job)}
+                </span>
+                {job.pay_type === "Fixed" && (
+                  <span className="text-sm text-gray-500">fixed price</span>
+                )}
+              </div>
+            </div>
+
+            {/* Location and Date */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-gray-50 p-4 rounded-xl">
+                <div className="flex items-center gap-2 text-gray-500 mb-1">
+                  <MapPin className="w-4 h-4" />
+                  <span className="text-xs font-medium">LOCATION</span>
+                </div>
+                <p className="font-medium text-gray-900">
+                  {job.location || "To be determined"}
+                </p>
+              </div>
+              <div className="bg-gray-50 p-4 rounded-xl">
+                <div className="flex items-center gap-2 text-gray-500 mb-1">
+                  <Calendar className="w-4 h-4" />
+                  <span className="text-xs font-medium">DATE</span>
+                </div>
+                <p className="font-medium text-gray-900">
+                  {job.date ? formatDate(job.date) : "Flexible"}
+                </p>
+              </div>
+            </div>
+
+            {/* Description */}
+            <div>
+              <h3 className="text-sm font-medium text-gray-700 mb-2">
+                Description
+              </h3>
+              <p className="text-gray-600 whitespace-pre-wrap">
+                {job.description}
+              </p>
+            </div>
+
+            {/* Details Grid */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <h3 className="text-sm font-medium text-gray-700 mb-2">
+                  Category
+                </h3>
+                <p className="text-gray-600">{job.category}</p>
+              </div>
+              <div>
+                <h3 className="text-sm font-medium text-gray-700 mb-2">
+                  Level Required
+                </h3>
+                <p className="text-gray-600">{job.level_required || "Any"}</p>
+              </div>
+              <div>
+                <h3 className="text-sm font-medium text-gray-700 mb-2">
+                  Urgency
+                </h3>
+                <p className="text-gray-600 flex items-center gap-1">
+                  <Zap className="w-4 h-4 text-gray-400" />
+                  {job.urgency || "Flexible"}
+                </p>
+              </div>
+              <div>
+                <h3 className="text-sm font-medium text-gray-700 mb-2">
+                  Project Size
+                </h3>
+                <p className="text-gray-600">
+                  {job.project_size || "Not specified"}
+                </p>
+              </div>
+            </div>
+
+            {/* Skills */}
+            {job.skills && job.skills.length > 0 && (
+              <div>
+                <h3 className="text-sm font-medium text-gray-700 mb-2">
+                  Skills Required
+                </h3>
+                <div className="flex flex-wrap gap-2">
+                  {job.skills.map((skill, i) => (
+                    <span
+                      key={i}
+                      className="px-3 py-1 bg-gray-100 text-gray-700 text-sm rounded-full"
+                    >
+                      {skill}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Materials */}
+            <div>
+              <h3 className="text-sm font-medium text-gray-700 mb-2">
+                Materials & Tools
+              </h3>
+              <p className="text-gray-600">
+                {job.materials_provided
+                  ? "I will provide materials"
+                  : "Worker should bring materials"}
+              </p>
+            </div>
+
+            {/* Building Access */}
+            {job.building_access && (
+              <div>
+                <h3 className="text-sm font-medium text-gray-700 mb-2">
+                  Building Access
+                </h3>
+                <p className="text-gray-600">{job.building_access}</p>
+              </div>
+            )}
+
+            {/* Images */}
+            {job.images && job.images.length > 0 && (
+              <div>
+                <h3 className="text-sm font-medium text-gray-700 mb-2">
+                  Photos
+                </h3>
+                <div className="grid grid-cols-3 gap-2">
+                  {job.images.map((img, i) => (
+                    <img
+                      key={i}
+                      src={img}
+                      alt={`Job photo ${i + 1}`}
+                      className="w-full h-24 object-cover rounded-lg border border-gray-200"
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* COI Document */}
+            {job.coi_url && (
+              <div>
+                <h3 className="text-sm font-medium text-gray-700 mb-2">
+                  COI Document
+                </h3>
+                <a
+                  href={job.coi_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition"
+                >
+                  <Briefcase className="w-4 h-4" />
+                  View Document
+                </a>
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === "applications" && (
+          <div className="space-y-4">
+            {applications.length > 0 ? (
+              applications.map((app) => (
+                <div
+                  key={app.id}
+                  className="border border-gray-200 rounded-xl p-4 hover:shadow-md transition"
+                >
+                  <div className="flex items-start gap-3">
+                    {/* Avatar */}
+                    <div className="w-12 h-12 rounded-full bg-linear-to-r from-purple-500 to-pink-500 flex items-center justify-center text-white font-bold text-lg shrink-0">
+                      {app.worker?.full_name?.charAt(0).toUpperCase() || "?"}
+                    </div>
+
+                    {/* Content */}
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between mb-1">
+                        <h3 className="font-semibold text-gray-900">
+                          {app.worker?.full_name || "Anonymous"}
+                        </h3>
+                        {getApplicationStatusBadge(app.status)}
+                      </div>
+                      <p className="text-sm text-gray-600 mb-2">
+                        {app.worker?.email}
+                      </p>
+
+                      {/* Message if exists */}
+                      {app.message && (
+                        <p className="text-sm text-gray-700 bg-gray-50 p-2 rounded-lg mb-2 italic">
+                          "{app.message}"
+                        </p>
+                      )}
+
+                      <div className="flex items-center gap-4 text-sm text-gray-500">
+                        <div className="flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          <span>
+                            Applied{" "}
+                            {new Date(app.created_at).toLocaleDateString()}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex gap-2 mt-3">
+                        {app.status === "pending" && (
+                          <Link
+                            href={`/customer/dashboard/applications/${app.id}`}
+                            className="px-3 py-1.5 bg-purple-600 text-white text-xs font-medium rounded-lg hover:bg-purple-700 transition"
+                          >
+                            Review Application
+                          </Link>
+                        )}
+                        <Link
+                          href={`/customer/dashboard/chat/${jobId}`}
+                          className="px-3 py-1.5 border border-gray-200 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-50 transition flex items-center gap-1"
+                        >
+                          <MessageSquare className="w-3 h-3" />
+                          Message
+                        </Link>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="text-center py-12">
+                <Users className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                <h3 className="text-lg font-medium text-gray-900 mb-1">
+                  No applications yet
+                </h3>
+                <p className="text-sm text-gray-500">
+                  Workers will appear here when they apply to your job
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === "messages" && assignedWorker && (
+          <div className="space-y-4">
+            <div className="bg-gray-50 rounded-xl p-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-linear-to-r from-green-500 to-blue-500 flex items-center justify-center text-white font-bold text-lg">
+                  {assignedWorker.full_name?.charAt(0).toUpperCase() || "W"}
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-900">
+                    {assignedWorker.full_name}
+                  </h3>
+                  <p className="text-sm text-gray-600">
+                    {assignedWorker.email}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <Link
+              href={`/customer/dashboard/chat/${jobId}`}
+              className="block w-full px-4 py-3 bg-purple-600 text-white text-center rounded-lg hover:bg-purple-700 transition font-medium"
+            >
+              Open Chat
+            </Link>
+          </div>
+        )}
+      </div>
+
+      {/* Cancel Confirmation Modal */}
+      {showCancelConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl max-w-md w-full p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              Cancel Job?
+            </h3>
+            <p className="text-gray-600 mb-4">
+              Are you sure you want to cancel this job? This action cannot be
+              undone.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowCancelConfirm(false)}
+                className="flex-1 px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition"
+              >
+                Go Back
+              </button>
+              <button
+                onClick={handleCancelJob}
+                className="flex-1 px-4 py-2 bg-rose-600 text-white rounded-lg hover:bg-rose-700 transition"
+              >
+                Cancel Job
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

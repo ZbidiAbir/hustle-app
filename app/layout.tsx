@@ -1,0 +1,28 @@
+import type { Metadata } from "next";
+import { Inter } from "next/font/google";
+import "./globals.css";
+import AuthProvider from "./AuthProvider";
+import { ToastProvider } from "@/contexts/ToastContext";
+
+const inter = Inter({ subsets: ["latin"] });
+
+export const metadata: Metadata = {
+  title: "Hustle - Plateforme de services",
+  description: "Connectez talents et opportunités",
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="fr">
+      <AuthProvider>
+        <ToastProvider>
+          <body className={inter.className}>{children}</body>
+        </ToastProvider>
+      </AuthProvider>
+    </html>
+  );
+}
