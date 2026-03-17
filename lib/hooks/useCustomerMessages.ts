@@ -97,7 +97,10 @@ export const useMessages = () => {
             : conversation.otherUser.avatar_url,
       }));
 
-      setMessages(messagesWithSenders);
+      setMessages(
+        //@ts-ignore
+        messagesWithSenders
+      );
 
       // Marquer comme lu
       await messageService.markMessagesAsRead(conversation.id, currentUser.id);

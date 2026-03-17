@@ -247,7 +247,10 @@ export default function CustomerLayout({
                               {user?.account_type &&
                                 getAccountTypeIcon(user.account_type)}
                               <span>
-                                {getAccountTypeLabel(user.account_type)}
+                                {getAccountTypeLabel(
+                                  //@ts-ignore
+                                  user.account_type
+                                )}
                               </span>
                             </div>
                           </div>

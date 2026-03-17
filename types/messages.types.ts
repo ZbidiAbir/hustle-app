@@ -9,8 +9,8 @@ export type Message = {
   content: string;
   read: boolean;
   created_at: string;
-  sender_name?: string;
-  sender_avatar?: string | null;
+  sender_name?: string | null; // Ajouter null ici
+  sender_avatar?: string | null; // Ajouter null ici
 };
 export type SendMessageData = {
   job_id: string;

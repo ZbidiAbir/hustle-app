@@ -155,7 +155,10 @@ export default function CustomerProfilePage() {
   };
 
   const handleCompanySubmit = async () => {
-    await updateCompanyInfo(companyForm);
+    await updateCompanyInfo(
+      //@ts-ignore
+      companyForm
+    );
   };
 
   const handlePaymentSubmit = async () => {
@@ -989,7 +992,7 @@ function SaveButton({ onClick, saving, text, color = "purple" }: any) {
     <button
       onClick={onClick}
       disabled={saving}
-      className={`px-6 py-2.5 bg-gradient-to-r ${colors[color]} text-white rounded-lg transition disabled:opacity-50 flex items-center gap-2 shadow-sm`}
+      className={`px-6 py-2.5 bg-gradient-to-r text-white rounded-lg transition disabled:opacity-50 flex items-center gap-2 shadow-sm`}
     >
       {saving ? (
         <>

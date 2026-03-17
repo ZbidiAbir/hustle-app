@@ -641,9 +641,9 @@ export default function AdminJobsPage() {
                               {job.customer?.full_name || "Company name"}
                             </div>
                             <div className="flex items-center gap-1 text-xs text-gray-500">
-                              {getCustomerTypeIcon(job.customer_type)}
+                              {getCustomerTypeIcon(job.customer?.type)}
                               <span>
-                                {getCustomerTypeLabel(job.customer_type)}
+                                {getCustomerTypeLabel(job.customer?.type)}
                               </span>
                             </div>
                           </div>

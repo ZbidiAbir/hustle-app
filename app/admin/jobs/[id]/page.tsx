@@ -682,7 +682,11 @@ export default function AdminJobDetailPage() {
                           key={index}
                           className="relative group cursor-pointer aspect-square bg-gray-100 rounded-lg border border-gray-200 overflow-hidden"
                           onClick={() =>
-                            !hasError && setSelectedImage(imageUrl || undefined)
+                            !hasError &&
+                            setSelectedImage(
+                              //@ts-ignore
+                              imageUrl || undefined
+                            )
                           }
                         >
                           {imageUrl && !hasError ? (

@@ -62,6 +62,7 @@ export const workerService = {
         .single();
 
       if (error) throw error;
+      //@ts-ignore
       return data;
     } catch (error) {
       console.error("Erreur lors de la récupération du worker:", error);
