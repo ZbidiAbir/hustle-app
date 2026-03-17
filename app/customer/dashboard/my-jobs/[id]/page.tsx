@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import {
   MapPin,
   Calendar,
@@ -25,6 +26,7 @@ import {
   MoreHorizontal,
 } from "lucide-react";
 
+// Types
 type Job = {
   id: string;
   title: string;
@@ -50,33 +52,26 @@ type Job = {
   coi_url?: string;
 };
 
+type Profile = {
+  id: string;
+  full_name: string;
+  email: string;
+  avatar_url?: string | null;
+};
+
 type Application = {
   id: string;
   worker_id: string;
   status: string;
   created_at: string;
   message?: string;
-  worker?: {
-    full_name: string;
-    email: string;
-    avatar_url?: string;
-  };
-};
-
-type Worker = {
-  id: string;
-  full_name: string;
-  email: string;
-  avatar_url?: string;
-  rating?: number;
-  jobs_completed?: number;
-  phone?: string;
+  worker?: Profile;
 };
 
 export default function JobDetailPage() {
   const [job, setJob] = useState<Job | null>(null);
   const [applications, setApplications] = useState<Application[]>([]);
-  const [assignedWorker, setAssignedWorker] = useState<Worker | null>(null);
+  const [assignedWorker, setAssignedWorker] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<
     "details" | "applications" | "messages"
@@ -115,7 +110,7 @@ export default function JobDetailPage() {
       if (appsError) throw appsError;
 
       if (appsData && appsData.length > 0) {
-        // 3. Récupérer les profils des workers séparément
+        // 3. Récupérer les profils des workers
         const workerIds = appsData.map((app) => app.worker_id);
         const { data: profilesData, error: profilesError } = await supabase
           .from("profiles")
@@ -124,29 +119,34 @@ export default function JobDetailPage() {
 
         if (profilesError) throw profilesError;
 
-        // 4. Combiner les données
+        // Créer un Map pour un accès facile aux profils
         const profilesMap = new Map(profilesData?.map((p) => [p.id, p]) || []);
 
+        // Combiner les applications avec les profils
         const appsWithWorkers = appsData.map((app) => ({
           ...app,
           worker: profilesMap.get(app.worker_id) || {
+            id: app.worker_id,
             full_name: "Unknown Worker",
             email: "unknown@email.com",
+            avatar_url: null,
           },
         }));
 
         setApplications(appsWithWorkers);
       }
 
-      // 5. Si un worker est assigné, récupérer ses détails
+      // 4. Si un worker est assigné, récupérer ses détails
       if (jobData.worker_id) {
-        const { data: workerData } = await supabase
+        const { data: workerData, error: workerError } = await supabase
           .from("profiles")
           .select("id, full_name, email, avatar_url")
           .eq("id", jobData.worker_id)
           .single();
 
-        setAssignedWorker(workerData);
+        if (!workerError && workerData) {
+          setAssignedWorker(workerData);
+        }
       }
     } catch (error) {
       console.error("Error fetching job details:", error);
@@ -176,6 +176,80 @@ export default function JobDetailPage() {
     navigator.clipboard.writeText(window.location.href);
     alert("✅ Link copied to clipboard!");
     setShowShareMenu(false);
+  };
+
+  // Fonction pour obtenir les initiales d'un nom
+  const getInitials = (name: string) => {
+    return name
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
+  };
+
+  // Composant Avatar réutilisable
+  const Avatar = ({
+    profile,
+    size = "md",
+  }: {
+    profile?: Profile | null;
+    size?: "sm" | "md" | "lg";
+  }) => {
+    const sizeClasses = {
+      sm: "w-8 h-8 text-xs",
+      md: "w-12 h-12 text-sm",
+      lg: "w-16 h-16 text-lg",
+    };
+
+    const [imageError, setImageError] = useState(false);
+
+    if (!profile) {
+      return (
+        <div
+          className={`${sizeClasses[size]} rounded-full bg-gray-200 flex items-center justify-center text-gray-500 font-medium`}
+        >
+          ?
+        </div>
+      );
+    }
+
+    if (profile.avatar_url && !imageError) {
+      return (
+        <div
+          className={`${sizeClasses[size]} rounded-full overflow-hidden relative bg-gray-100`}
+        >
+          <img
+            src={profile.avatar_url}
+            alt={profile.full_name}
+            className="object-cover"
+            onError={() => setImageError(true)}
+            sizes={size === "sm" ? "32px" : size === "md" ? "48px" : "64px"}
+          />
+        </div>
+      );
+    }
+
+    // Fallback avec les initiales
+    const colors = [
+      "bg-purple-500",
+      "bg-blue-500",
+      "bg-green-500",
+      "bg-yellow-500",
+      "bg-red-500",
+      "bg-pink-500",
+      "bg-indigo-500",
+    ];
+    const colorIndex = (profile.id?.charCodeAt(0) || 0) % colors.length;
+    const bgColor = colors[colorIndex];
+
+    return (
+      <div
+        className={`${sizeClasses[size]} rounded-full ${bgColor} flex items-center justify-center text-white font-medium`}
+      >
+        {getInitials(profile.full_name)}
+      </div>
+    );
   };
 
   const getStatusBadge = (status: string) => {
@@ -582,10 +656,8 @@ export default function JobDetailPage() {
                   className="border border-gray-200 rounded-xl p-4 hover:shadow-md transition"
                 >
                   <div className="flex items-start gap-3">
-                    {/* Avatar */}
-                    <div className="w-12 h-12 rounded-full bg-linear-to-r from-purple-500 to-pink-500 flex items-center justify-center text-white font-bold text-lg shrink-0">
-                      {app.worker?.full_name?.charAt(0).toUpperCase() || "?"}
-                    </div>
+                    {/* Avatar - Utilisation du composant Avatar */}
+                    <Avatar profile={app.worker} size="md" />
 
                     {/* Content */}
                     <div className="flex-1">
@@ -627,7 +699,7 @@ export default function JobDetailPage() {
                           </Link>
                         )}
                         <Link
-                          href={`/customer/dashboard/chat/${jobId}`}
+                          href={`/customer/dashboard/chat/${jobId}?worker=${app.worker_id}`}
                           className="px-3 py-1.5 border border-gray-200 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-50 transition flex items-center gap-1"
                         >
                           <MessageSquare className="w-3 h-3" />
@@ -656,9 +728,7 @@ export default function JobDetailPage() {
           <div className="space-y-4">
             <div className="bg-gray-50 rounded-xl p-4">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-full bg-linear-to-r from-green-500 to-blue-500 flex items-center justify-center text-white font-bold text-lg">
-                  {assignedWorker.full_name?.charAt(0).toUpperCase() || "W"}
-                </div>
+                <Avatar profile={assignedWorker} size="md" />
                 <div>
                   <h3 className="font-semibold text-gray-900">
                     {assignedWorker.full_name}
@@ -670,7 +740,7 @@ export default function JobDetailPage() {
               </div>
             </div>
             <Link
-              href={`/customer/dashboard/chat/${jobId}`}
+              href={`/customer/dashboard/chat/${jobId}?worker=${assignedWorker.id}`}
               className="block w-full px-4 py-3 bg-purple-600 text-white text-center rounded-lg hover:bg-purple-700 transition font-medium"
             >
               Open Chat

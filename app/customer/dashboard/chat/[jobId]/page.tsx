@@ -597,12 +597,12 @@ export default function CustomerChatPage() {
                     >
                       {/* Avatar for worker messages */}
                       {!isMine && showAvatar && senderWorker && (
-                        <div
-                          className={`w-8 h-8 rounded-full ${getAvatarColor(
-                            senderWorker.id
-                          )} flex-shrink-0 flex items-center justify-center text-white text-xs font-medium shadow-md`}
-                        >
-                          {senderWorker.full_name.charAt(0).toUpperCase()}
+                        <div className="w-12 h-12 rounded-full bg-gray flex items-center justify-center text-white font-bold text-lg">
+                          <img
+                            src={senderWorker.avatar_url}
+                            alt=""
+                            className="rounded-full"
+                          />{" "}
                         </div>
                       )}
 
@@ -643,8 +643,12 @@ export default function CustomerChatPage() {
 
                       {/* Avatar for user messages */}
                       {isMine && (
-                        <div className="w-8 h-8 rounded-full bg-linear-to-r from-green-500 to-blue-500 flex-shrink-0 flex items-center justify-center text-white text-xs font-medium shadow-md">
-                          {currentUser?.email?.charAt(0).toUpperCase() || "M"}
+                        <div className="w-12 h-12 rounded-full bg-gray flex items-center justify-center text-white font-bold text-lg">
+                          <img
+                            src={currentUser.avatar_url}
+                            alt=""
+                            className="rounded-full"
+                          />{" "}
                         </div>
                       )}
                     </div>
@@ -659,7 +663,7 @@ export default function CustomerChatPage() {
 
       {/* Input area */}
       <div className="bg-white border-t shadow-lg">
-        <div className="max-w-4xl mx-auto p-4">
+        <div className="mx-auto p-4">
           <form onSubmit={sendMessage} className="flex gap-2">
             <div className="flex-1 relative">
               <input

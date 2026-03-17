@@ -1,0 +1,81 @@
+import { Profile } from "./profile";
+
+export type Message = {
+  id: string;
+  job_id: string;
+  sender_id: string;
+  content: string;
+  read: boolean;
+  created_at: string;
+  sender_name?: string;
+  sender_avatar?: string;
+};
+export type Job = {
+  id: string;
+  title: string;
+  description: string;
+  customer_id: string;
+  worker_id: string | null; // <- worker_id est requis ici
+
+  status: "open" | "assigned" | "in_progress" | "completed" | "cancelled";
+  price: number;
+  location: string;
+  images?: string[];
+  created_at: string;
+  urgency?: string;
+  level_required?: string;
+  skills?: string[];
+};
+
+export type Customer = Profile & {
+  rating?: number;
+  jobs_posted?: number;
+  member_since?: string;
+};
+export type Worker = {
+  id: string;
+  full_name: string | null;
+  email: string;
+  avatar_url?: string | null;
+  phone?: string | null;
+  job_title?: string | null;
+  trade_category?: string | null;
+  level?: string | null;
+  skills?: string[] | null;
+  rating?: number;
+  jobs_completed?: number;
+  member_since?: string;
+  created_at?: string;
+};
+export type User = {
+  id: string;
+  email: string;
+  user_metadata?: {
+    full_name?: string;
+  };
+};
+export type Conversation = {
+  id: string;
+  jobId: string;
+  jobTitle: string;
+  customer: Customer;
+  worker: Worker;
+  lastMessage?: {
+    content: string;
+    created_at: string;
+    sender_id: string;
+    read: boolean;
+  };
+  unreadCount: number;
+  status: "open" | "assigned" | "in_progress" | "completed" | "cancelled";
+  price: number;
+  location: string;
+  createdAt: string;
+  jobDetails?: {
+    description?: string;
+    images?: string[];
+    urgency?: string;
+    level_required?: string;
+    skills?: string[];
+  };
+};

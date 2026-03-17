@@ -14,7 +14,6 @@ import {
   LogOut,
   Menu,
   X,
-  Bell,
   ChevronDown,
 } from "lucide-react";
 import NotificationBell from "@/app/components/NotificationBell";
@@ -40,36 +39,45 @@ export default function WorkerLayout({
 
   useEffect(() => {
     const getUser = async () => {
-      const {
-        data: { user: authUser },
-      } = await supabase.auth.getUser();
+      try {
+        const {
+          data: { user: authUser },
+        } = await supabase.auth.getUser();
 
-      if (!authUser) {
-        router.push("/login");
-        return;
+        if (!authUser) {
+          router.push("/login");
+          return;
+        }
+
+        const { data: profile, error } = await supabase
+          .from("profiles")
+          .select("full_name, email, avatar_url")
+          .eq("id", authUser.id)
+          .single();
+
+        if (error) throw error;
+        setUser(profile);
+      } catch (error) {
+        console.error("Error loading user:", error);
+      } finally {
+        setLoading(false);
       }
-
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("full_name, email, avatar_url")
-        .eq("id", authUser.id)
-        .single();
-
-      setUser(profile);
-      setLoading(false);
     };
 
     getUser();
-  }, []);
+  }, [router]);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push("/login");
+    try {
+      await supabase.auth.signOut();
+      router.push("/login");
+    } catch (error) {
+      console.error("Error logging out:", error);
+    }
   };
 
   const navigation = [
     { name: "Job Board", href: "/worker/dashboard/jobs", icon: Home },
-
     {
       name: "My Applications",
       href: "/worker/dashboard/applications",
@@ -78,21 +86,33 @@ export default function WorkerLayout({
     {
       name: "My Assigned Jobs",
       href: "/worker/dashboard/my-jobs",
-      icon: ClipboardList,
+      icon: Briefcase,
     },
-
     {
       name: "Messages",
       href: "/worker/dashboard/messages",
       icon: MessageSquare,
     },
-    { name: "Settings", href: "/customer/dashboard/settings", icon: Settings },
+    { name: "Settings", href: "/worker/dashboard/profile", icon: Settings },
   ];
+
+  const getInitials = (name: string | null | undefined) => {
+    if (!name) return "W";
+    return name
+      .split(" ")
+      .map((word) => word[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
+  };
 
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent"></div>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading your dashboard...</p>
+        </div>
       </div>
     );
   }
@@ -107,15 +127,20 @@ export default function WorkerLayout({
             <div className="flex items-center gap-4">
               <button
                 onClick={() => setSidebarOpen(!sidebarOpen)}
-                className="lg:hidden p-2 rounded-lg hover:bg-gray-100"
+                className="lg:hidden p-2 rounded-lg hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                aria-label="Toggle menu"
               >
-                <Menu className="w-5 h-5 text-gray-600" />
+                {sidebarOpen ? (
+                  <X className="w-5 h-5 text-gray-600" />
+                ) : (
+                  <Menu className="w-5 h-5 text-gray-600" />
+                )}
               </button>
               <Link
-                href="/customer/dashboard"
+                href="/worker/dashboard/jobs"
                 className="flex items-center gap-2"
               >
-                <span className="text-2xl font-bold bg-linear-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                <span className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
                   HUSTLE
                 </span>
                 <span className="hidden sm:inline-block px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
@@ -127,19 +152,25 @@ export default function WorkerLayout({
             {/* Right section */}
             <div className="flex items-center gap-3">
               {/* Notifications */}
-              <button className="relative p-2 rounded-lg hover:bg-gray-100">
-                <NotificationBell /> {/* 👈 Ajouté ici */}
-                <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
-              </button>
+              <NotificationBell />
 
               {/* User menu */}
               <div className="relative">
                 <button
                   onClick={() => setShowUserMenu(!showUserMenu)}
-                  className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-100"
+                  className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  aria-label="User menu"
                 >
-                  <div className="w-8 h-8 rounded-full bg-linear-to-r from-blue-500 to-purple-500 flex items-center justify-center text-white font-semibold">
-                    {user?.full_name?.charAt(0).toUpperCase() || "U"}
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center text-white font-semibold overflow-hidden">
+                    {user?.avatar_url ? (
+                      <img
+                        src={user.avatar_url}
+                        alt={user.full_name || "User"}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      getInitials(user?.full_name)
+                    )}
                   </div>
                   <span className="hidden md:block text-sm font-medium text-gray-700">
                     {user?.full_name?.split(" ")[0] || "User"}
@@ -147,34 +178,52 @@ export default function WorkerLayout({
                   <ChevronDown className="w-4 h-4 text-gray-500" />
                 </button>
 
-                {/* Dropdown */}
+                {/* Dropdown menu */}
                 {showUserMenu && (
                   <>
                     <div
                       className="fixed inset-0 z-40"
                       onClick={() => setShowUserMenu(false)}
                     />
-                    <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-xl border z-50">
-                      <div className="p-4 border-b">
-                        <p className="font-medium text-gray-900">
-                          {user?.full_name}
+                    <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-lg border border-gray-200 z-50">
+                      <div className="p-4 border-b border-gray-100">
+                        <div className="flex items-center gap-3 mb-2">
+                          <div className="w-10 h-10 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center text-white font-semibold overflow-hidden">
+                            {user?.avatar_url ? (
+                              <img
+                                src={user.avatar_url}
+                                alt={user.full_name || "User"}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              getInitials(user?.full_name)
+                            )}
+                          </div>
+                          <div>
+                            <p className="font-medium text-gray-900">
+                              {user?.full_name || "User"}
+                            </p>
+                            <p className="text-xs text-gray-500">Worker</p>
+                          </div>
+                        </div>
+                        <p className="text-sm text-gray-500 break-all">
+                          {user?.email}
                         </p>
-                        <p className="text-sm text-gray-500">{user?.email}</p>
                       </div>
                       <div className="p-2">
                         <Link
-                          href="/customer/settings"
-                          className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100"
+                          href="/worker/dashboard/profile"
+                          className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 w-full text-left transition"
                           onClick={() => setShowUserMenu(false)}
                         >
                           <Settings className="w-4 h-4 text-gray-500" />
                           <span className="text-sm text-gray-700">
-                            Settings
+                            Profile Settings
                           </span>
                         </Link>
                         <button
                           onClick={handleLogout}
-                          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-red-50 text-red-600"
+                          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-red-50 text-red-600 transition mt-1"
                         >
                           <LogOut className="w-4 h-4" />
                           <span className="text-sm">Log out</span>
@@ -197,25 +246,35 @@ export default function WorkerLayout({
         ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
       `}
       >
-        <div className="h-full overflow-y-auto p-4">
+        <div className="h-full overflow-y-auto p-4 flex flex-col">
           {/* User profile summary */}
-          <div className="mb-6 p-4 bg-linear-to-r from-blue-50 to-purple-50 rounded-xl">
+          <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-full bg-linear-to-r from-blue-500 to-purple-500 flex items-center justify-center text-white font-bold text-lg">
-                {user?.full_name?.charAt(0).toUpperCase() || "U"}
+              <div className="w-12 h-12 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center text-white font-bold text-lg overflow-hidden flex-shrink-0">
+                {user?.avatar_url ? (
+                  <img
+                    src={user.avatar_url}
+                    alt={user.full_name || "User"}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  getInitials(user?.full_name)
+                )}
               </div>
-              <div>
-                <p className="font-medium text-gray-900">
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-gray-900 truncate">
                   {user?.full_name || "User"}
                 </p>
+                <p className="text-xs text-gray-500">Worker</p>
               </div>
             </div>
           </div>
 
           {/* Navigation */}
-          <nav className="space-y-1">
+          <nav className="space-y-1 flex-1">
             {navigation.map((item) => {
-              const isActive = pathname === item.href;
+              const isActive =
+                pathname === item.href || pathname?.startsWith(item.href + "/");
               const Icon = item.icon;
 
               return (
@@ -224,7 +283,7 @@ export default function WorkerLayout({
                   href={item.href}
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg transition ${
                     isActive
-                      ? "bg-linear-to-r from-blue-50 to-purple-50 text-blue-700"
+                      ? "bg-gradient-to-r from-blue-50 to-purple-50 text-blue-700"
                       : "text-gray-700 hover:bg-gray-100"
                   }`}
                   onClick={() => setSidebarOpen(false)}
@@ -246,20 +305,23 @@ export default function WorkerLayout({
           </nav>
 
           {/* Footer links */}
-          <div className="absolute bottom-0 left-0 right-0 p-4 border-t bg-white">
+          <div className="pt-4 border-t border-gray-200 mt-4">
             <div className="space-y-2">
               <Link
                 href="/terms"
-                className="block text-xs text-gray-500 hover:text-gray-700"
+                className="block text-xs text-gray-500 hover:text-gray-700 transition"
               >
                 Terms & Conditions
               </Link>
               <Link
                 href="/privacy"
-                className="block text-xs text-gray-500 hover:text-gray-700"
+                className="block text-xs text-gray-500 hover:text-gray-700 transition"
               >
                 Privacy Policy
               </Link>
+              <p className="text-xs text-gray-400 pt-2">
+                © 2026 HUSTLE. All rights reserved.
+              </p>
             </div>
           </div>
         </div>
@@ -267,8 +329,7 @@ export default function WorkerLayout({
 
       {/* Main content */}
       <main className="lg:pl-64 pt-16 min-h-screen">
-        <div className="p-4 sm:p-6 lg:p-0">
-          {" "}
+        <div className="">
           <ToastProvider>{children}</ToastProvider>
         </div>
       </main>

@@ -368,8 +368,12 @@ export default function AllApplicationsPage() {
                   {/* Header with avatar and status */}
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-full bg-linear-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-bold text-lg shadow-sm">
-                        {app.worker?.full_name?.charAt(0).toUpperCase() || "?"}
+                      <div className="w-12 h-12 rounded-full to-pink-500 bg-gray-200 flex items-center justify-center text-white font-bold text-lg shadow-sm">
+                        <img
+                          src={app.worker?.avatar_url}
+                          alt=""
+                          className="rounded-full"
+                        />{" "}
                       </div>
                       <div>
                         <h3 className="font-semibold text-gray-900">
