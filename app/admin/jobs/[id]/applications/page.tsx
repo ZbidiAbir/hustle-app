@@ -766,13 +766,6 @@ export default function JobApplicationsPage() {
                               </button>
                             </>
                           )}
-                          <Link
-                            href={`/admin/messages?worker=${app.worker_id}&job=${jobId}`}
-                            className="p-1 hover:bg-gray-100 rounded-lg transition"
-                            title="Message"
-                          >
-                            <MessageSquare className="w-4 h-4 text-gray-600" />
-                          </Link>
                         </div>
                       </td>
                     </tr>

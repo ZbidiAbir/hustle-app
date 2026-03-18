@@ -84,9 +84,6 @@ type UserProfile = {
 
   // Business Verification
   business_verified?: boolean;
-  business_verification_date?: string | null;
-  business_verified_by?: string | null;
-  verification_notes?: string | null;
 
   work_experience?: WorkExperience[];
 };
@@ -159,7 +156,8 @@ export default function AdminUserDetailPage() {
           : "$0";
     }
   };
-
+  const [insuranceLoading, setInsuranceLoading] = useState(false);
+  const [showInsuranceModal, setShowInsuranceModal] = useState(false);
   const [recentJobs, setRecentJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -173,7 +171,6 @@ export default function AdminUserDetailPage() {
     | "verification"
   >("overview");
   const [verificationLoading, setVerificationLoading] = useState(false);
-  const [verificationNotes, setVerificationNotes] = useState("");
   const [showVerificationModal, setShowVerificationModal] = useState(false);
 
   const params = useParams();
@@ -343,9 +340,7 @@ export default function AdminUserDetailPage() {
         .from("profiles")
         .update({
           business_verified: true,
-          business_verification_date: new Date().toISOString(),
-          business_verified_by: adminId,
-          verification_notes: verificationNotes || null,
+
           updated_at: new Date().toISOString(),
         })
         .eq("id", user.id);
@@ -356,14 +351,11 @@ export default function AdminUserDetailPage() {
       setUser({
         ...user,
         business_verified: true,
-        business_verification_date: new Date().toISOString(),
-        business_verified_by: adminId,
-        verification_notes: verificationNotes,
+
         updated_at: new Date().toISOString(),
       });
 
       setShowVerificationModal(false);
-      setVerificationNotes("");
 
       // Afficher une notification de succès
       alert("Worker has been successfully verified!");
@@ -391,8 +383,7 @@ export default function AdminUserDetailPage() {
         .from("profiles")
         .update({
           business_verified: false,
-          business_verification_date: null,
-          business_verified_by: null,
+
           updated_at: new Date().toISOString(),
         })
         .eq("id", user.id);
@@ -403,8 +394,7 @@ export default function AdminUserDetailPage() {
       setUser({
         ...user,
         business_verified: false,
-        business_verification_date: null,
-        business_verified_by: null,
+
         updated_at: new Date().toISOString(),
       });
 
@@ -416,7 +406,78 @@ export default function AdminUserDetailPage() {
       setVerificationLoading(false);
     }
   };
+  const handleVerifyInsurance = async () => {
+    if (!user || user.role !== "worker") return;
 
+    try {
+      setInsuranceLoading(true);
+
+      const { error } = await supabase
+        .from("profiles")
+        .update({
+          insurance_verified: true,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", user.id);
+
+      if (error) throw error;
+
+      // Mettre à jour l'état local
+      setUser({
+        ...user,
+        insurance_verified: true,
+        updated_at: new Date().toISOString(),
+      });
+
+      setShowInsuranceModal(false);
+      alert("Insurance has been successfully verified!");
+    } catch (error) {
+      console.error("Error verifying insurance:", error);
+      alert("Failed to verify insurance. Please try again.");
+    } finally {
+      setInsuranceLoading(false);
+    }
+  };
+
+  const handleUnverifyInsurance = async () => {
+    if (!user || user.role !== "worker") return;
+
+    if (
+      !confirm(
+        "Are you sure you want to remove insurance verification from this worker?"
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setInsuranceLoading(true);
+
+      const { error } = await supabase
+        .from("profiles")
+        .update({
+          insurance_verified: false,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", user.id);
+
+      if (error) throw error;
+
+      // Mettre à jour l'état local
+      setUser({
+        ...user,
+        insurance_verified: false,
+        updated_at: new Date().toISOString(),
+      });
+
+      alert("Insurance verification has been removed.");
+    } catch (error) {
+      console.error("Error removing insurance verification:", error);
+      alert("Failed to remove insurance verification. Please try again.");
+    } finally {
+      setInsuranceLoading(false);
+    }
+  };
   const getInitials = (name: string | null) => {
     if (!name) return "U";
     return name
@@ -866,37 +927,6 @@ export default function AdminUserDetailPage() {
                       </div>
                     )}
                   </div>
-
-                  {user.business_verification_date && (
-                    <div>
-                      <p className="text-xs text-gray-500 mb-1">
-                        Verification Date
-                      </p>
-                      <p className="font-medium text-gray-900">
-                        {formatDate(user.business_verification_date)}
-                      </p>
-                    </div>
-                  )}
-
-                  {user.business_verified_by && (
-                    <div>
-                      <p className="text-xs text-gray-500 mb-1">Verified By</p>
-                      <p className="font-medium text-gray-900">
-                        Admin ID: {user.business_verified_by.slice(0, 8)}...
-                      </p>
-                    </div>
-                  )}
-
-                  {user.verification_notes && (
-                    <div className="col-span-2">
-                      <p className="text-xs text-gray-500 mb-1">
-                        Verification Notes
-                      </p>
-                      <p className="text-sm text-gray-700 bg-white p-3 rounded-lg border border-gray-200">
-                        {user.verification_notes}
-                      </p>
-                    </div>
-                  )}
                 </div>
               </div>
 
@@ -1157,47 +1187,188 @@ export default function AdminUserDetailPage() {
 
           {/* Insurance Tab (Worker only) */}
           {activeTab === "insurance" && user.role === "worker" && (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-6">
-                Insurance
-              </h3>
-
-              <div className="p-6 bg-gray-50 rounded-lg">
-                {user.insurance_url ? (
+            <div className="space-y-6">
+              {/* En-tête avec statut */}
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <div className="flex justify-between items-start mb-6">
                   <div>
-                    <div className="flex items-center gap-2 mb-4">
-                      <FileText className="w-5 h-5 text-green-600" />
-                      <span className="text-sm text-gray-700">
-                        Insurance document uploaded
-                      </span>
+                    <h3 className="text-lg font-semibold text-gray-900">
+                      Insurance Verification
+                    </h3>
+                    <p className="text-sm text-gray-500 mt-1">
+                      Verify this worker's insurance document
+                    </p>
+                  </div>
+                  <span
+                    className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium ${
+                      user.insurance_verified
+                        ? "bg-green-100 text-green-800"
+                        : "bg-yellow-100 text-yellow-800"
+                    }`}
+                  >
+                    <BadgeCheck className="w-4 h-4" />
+                    {user.insurance_verified ? "Verified" : "Not Verified"}
+                  </span>
+                </div>
+
+                {/* Statut de vérification */}
+                <div className="bg-gray-50 rounded-xl p-6 mb-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <p className="text-xs text-gray-500 mb-1">
+                        Insurance Status
+                      </p>
                       {user.insurance_verified ? (
-                        <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full flex items-center gap-1">
-                          <CheckCircle className="w-3 h-3" />
-                          Verified
-                        </span>
+                        <div className="flex items-center gap-2 text-green-600">
+                          <CheckCircle className="w-5 h-5" />
+                          <span className="font-medium">Verified</span>
+                        </div>
                       ) : (
-                        <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          Pending Verification
-                        </span>
+                        <div className="flex items-center gap-2 text-yellow-600">
+                          <Clock className="w-5 h-5" />
+                          <span className="font-medium">
+                            Pending Verification
+                          </span>
+                        </div>
                       )}
                     </div>
-
-                    <a
-                      href={user.insurance_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
-                    >
-                      <FileText className="w-4 h-4" />
-                      View Document
-                    </a>
+                    {user.insurance_verified && user.updated_at && (
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">
+                          Verified on
+                        </p>
+                        <p className="font-medium text-gray-900">
+                          {formatDate(user.updated_at)}
+                        </p>
+                      </div>
+                    )}
                   </div>
-                ) : (
-                  <p className="text-gray-500 text-center py-4">
-                    No insurance document uploaded
-                  </p>
+                </div>
+
+                {/* Document d'assurance */}
+                <div className="mb-6">
+                  <h4 className="font-medium text-gray-900 mb-3">
+                    Insurance Document
+                  </h4>
+                  <div className="p-6 bg-gray-50 rounded-lg">
+                    {user.insurance_url ? (
+                      <div>
+                        <div className="flex items-center gap-2 mb-4">
+                          <FileText className="w-5 h-5 text-blue-600" />
+                          <span className="text-sm text-gray-700">
+                            Insurance document uploaded
+                          </span>
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row gap-3">
+                          <a
+                            href={user.insurance_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+                          >
+                            <FileText className="w-4 h-4" />
+                            View Document
+                          </a>
+
+                          <a
+                            href={user.insurance_url}
+                            download
+                            className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition"
+                          >
+                            <Download className="w-4 h-4" />
+                            Download
+                          </a>
+                        </div>
+
+                        {/* Informations sur le document */}
+                        <div className="mt-4 text-xs text-gray-500">
+                          <p>
+                            File name: {user.insurance_url.split("/").pop()}
+                          </p>
+                          <p>
+                            Uploaded:{" "}
+                            {user.updated_at
+                              ? formatDate(user.updated_at)
+                              : "Date unknown"}
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-center py-8">
+                        <FileText className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                        <p className="text-gray-500">
+                          No insurance document uploaded
+                        </p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          The worker hasn't uploaded any insurance document yet
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Actions de vérification */}
+                {user.insurance_url && (
+                  <div className="flex gap-3">
+                    {!user.insurance_verified ? (
+                      <button
+                        onClick={() => setShowInsuranceModal(true)}
+                        disabled={insuranceLoading}
+                        className="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center justify-center gap-2 disabled:opacity-50"
+                      >
+                        {insuranceLoading ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                            Processing...
+                          </>
+                        ) : (
+                          <>
+                            <BadgeCheck className="w-5 h-5" />
+                            Verify Insurance
+                          </>
+                        )}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleUnverifyInsurance}
+                        disabled={insuranceLoading}
+                        className="flex-1 px-6 py-3 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition flex items-center justify-center gap-2 disabled:opacity-50"
+                      >
+                        {insuranceLoading ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                            Processing...
+                          </>
+                        ) : (
+                          <>
+                            <RotateCcw className="w-5 h-5" />
+                            Remove Verification
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
                 )}
+              </div>
+
+              {/* Informations supplémentaires sur l'assurance */}
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                  Insurance Requirements
+                </h3>
+                <div className="space-y-3 text-sm text-gray-600">
+                  <p>• Valid liability insurance is required for all workers</p>
+                  <p>• Insurance must be current and not expired</p>
+                  <p>• Document should clearly show:</p>
+                  <ul className="list-disc list-inside pl-4 space-y-1 text-gray-500">
+                    <li>Worker's name matching their profile</li>
+                    <li>Insurance company name</li>
+                    <li>Policy number</li>
+                    <li>Coverage dates</li>
+                    <li>Coverage amounts</li>
+                  </ul>
+                </div>
               </div>
             </div>
           )}
@@ -1319,24 +1490,10 @@ export default function AdminUserDetailPage() {
               them as a verified professional.
             </p>
 
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Verification Notes (Optional)
-              </label>
-              <textarea
-                value={verificationNotes}
-                onChange={(e) => setVerificationNotes(e.target.value)}
-                placeholder="Add any notes about this verification..."
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                rows={3}
-              />
-            </div>
-
             <div className="flex gap-3">
               <button
                 onClick={() => {
                   setShowVerificationModal(false);
-                  setVerificationNotes("");
                 }}
                 className="flex-1 px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition"
               >
@@ -1348,6 +1505,58 @@ export default function AdminUserDetailPage() {
                 className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center justify-center gap-2 disabled:opacity-50"
               >
                 {verificationLoading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                    Verifying...
+                  </>
+                ) : (
+                  <>
+                    <BadgeCheck className="w-4 h-4" />
+                    Verify
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Insurance Verification Modal */}
+      {showInsuranceModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6">
+            <h3 className="text-xl font-bold text-gray-900 mb-2">
+              Verify Insurance
+            </h3>
+            <p className="text-sm text-gray-500 mb-6">
+              Are you sure you want to verify this worker's insurance? Please
+              ensure you have reviewed the insurance document and it meets all
+              requirements.
+            </p>
+
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+              <div className="flex gap-2">
+                <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0" />
+                <p className="text-xs text-yellow-700">
+                  By verifying this insurance, you confirm that you have
+                  reviewed the document and it meets all the insurance
+                  requirements.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowInsuranceModal(false)}
+                className="flex-1 px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleVerifyInsurance}
+                disabled={insuranceLoading}
+                className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {insuranceLoading ? (
                   <>
                     <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
                     Verifying...

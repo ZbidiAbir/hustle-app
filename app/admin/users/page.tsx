@@ -42,6 +42,8 @@ import {
   TrendingUp,
   PieChart,
   Activity,
+  BadgeCheck,
+  BadgeX,
 } from "lucide-react";
 
 type User = {
@@ -107,6 +109,7 @@ type UserWithStats = User & {
   reports_count?: number;
   last_active?: string;
   account_status: "active" | "suspended" | "pending";
+  verification_status: "verified" | "partial" | "none";
 };
 
 type FilterOptions = {
@@ -141,6 +144,7 @@ export default function AdminUsersPage() {
     suspended: 0,
     pending: 0,
     verified: 0,
+    partial: 0,
     unverified: 0,
   });
   const [sortConfig, setSortConfig] = useState<{
@@ -161,6 +165,14 @@ export default function AdminUsersPage() {
   useEffect(() => {
     setCurrentPage(1);
   }, [filteredUsers]);
+
+  const getVerificationStatus = (
+    user: User
+  ): "verified" | "partial" | "none" => {
+    if (user.business_verified && user.insurance_verified) return "verified";
+    if (user.business_verified || user.insurance_verified) return "partial";
+    return "none";
+  };
 
   const fetchUsers = async () => {
     try {
@@ -209,15 +221,19 @@ export default function AdminUsersPage() {
               .in("status", ["in_progress", "assigned"]);
             jobsInProgress = inProgressCount || 0;
 
-            // Total des gains (à adapter selon ta structure)
+            // Total des gains
             const { data: completedJobs } = await supabase
               .from("jobs")
-              .select("price")
+              .select("price, fixed_rate, hourly_rate")
               .eq("worker_id", user.id)
               .eq("status", "completed");
+
             totalEarnings =
-              completedJobs?.reduce((sum, job) => sum + (job.price || 0), 0) ||
-              0;
+              completedJobs?.reduce((sum, job) => {
+                if (job.fixed_rate) return sum + job.fixed_rate;
+                if (job.hourly_rate) return sum + job.hourly_rate * 8; // Estimation 8h
+                return sum + (job.price || 0);
+              }, 0) || 0;
 
             // Notes et avis
             const { data: reviews } = await supabase
@@ -240,11 +256,16 @@ export default function AdminUsersPage() {
             // Total dépensé
             const { data: paidJobs } = await supabase
               .from("jobs")
-              .select("price")
+              .select("price, fixed_rate, hourly_rate")
               .eq("customer_id", user.id)
               .eq("status", "completed");
+
             totalSpent =
-              paidJobs?.reduce((sum, job) => sum + (job.price || 0), 0) || 0;
+              paidJobs?.reduce((sum, job) => {
+                if (job.fixed_rate) return sum + job.fixed_rate;
+                if (job.hourly_rate) return sum + job.hourly_rate * 8;
+                return sum + (job.price || 0);
+              }, 0) || 0;
           }
 
           // Vérifier les signalements
@@ -254,8 +275,9 @@ export default function AdminUsersPage() {
             .eq("reported_user_id", user.id);
           reportsCount = reports || 0;
 
-          // Déterminer le statut du compte (à adapter selon ta logique)
+          // Déterminer le statut du compte
           const accountStatus = determineAccountStatus(user);
+          const verificationStatus = getVerificationStatus(user);
 
           return {
             ...user,
@@ -268,6 +290,7 @@ export default function AdminUsersPage() {
             reviews_count: reviewsCount,
             reports_count: reportsCount,
             account_status: accountStatus,
+            verification_status: verificationStatus,
             last_active: user.updated_at || user.created_at,
           };
         })
@@ -285,8 +308,6 @@ export default function AdminUsersPage() {
   const determineAccountStatus = (
     user: User
   ): "active" | "suspended" | "pending" => {
-    // Logique personnalisée pour déterminer le statut
-    // Par exemple, basé sur les métadonnées ou une colonne spécifique
     if (user.metadata?.suspended) return "suspended";
     if (user.metadata?.pending_verification) return "pending";
     return "active";
@@ -302,12 +323,12 @@ export default function AdminUsersPage() {
       suspended: usersData.filter((u) => u.account_status === "suspended")
         .length,
       pending: usersData.filter((u) => u.account_status === "pending").length,
-      verified: usersData.filter(
-        (u) => u.business_verified || u.insurance_verified
-      ).length,
-      unverified: usersData.filter(
-        (u) => !u.business_verified && !u.insurance_verified
-      ).length,
+      verified: usersData.filter((u) => u.verification_status === "verified")
+        .length,
+      partial: usersData.filter((u) => u.verification_status === "partial")
+        .length,
+      unverified: usersData.filter((u) => u.verification_status === "none")
+        .length,
     });
   };
 
@@ -346,12 +367,14 @@ export default function AdminUsersPage() {
     // Filtre par vérification
     if (filters.verification === "verified") {
       filtered = filtered.filter(
-        (user) => user.business_verified || user.insurance_verified
+        (user) => user.verification_status === "verified"
       );
-    } else if (filters.verification === "unverified") {
+    } else if (filters.verification === "partial") {
       filtered = filtered.filter(
-        (user) => !user.business_verified && !user.insurance_verified
+        (user) => user.verification_status === "partial"
       );
+    } else if (filters.verification === "none") {
+      filtered = filtered.filter((user) => user.verification_status === "none");
     }
 
     // Filtre par date
@@ -403,7 +426,6 @@ export default function AdminUsersPage() {
           : bValue.localeCompare(aValue);
       }
 
-      // Pour les nombres
       const aNum = Number(aValue) || 0;
       const bNum = Number(bValue) || 0;
 
@@ -448,8 +470,6 @@ export default function AdminUsersPage() {
         ) {
           return;
         }
-        // Implémenter la logique de suppression (ou désactivation)
-        // Note: Il est préférable d'utiliser une fonction Edge Supabase pour ça
         alert(
           "User deletion requires admin privileges. Please use the Supabase dashboard."
         );
@@ -457,7 +477,6 @@ export default function AdminUsersPage() {
       }
 
       if (action === "suspend") {
-        // Mettre à jour le statut de l'utilisateur
         const { error } = await supabase
           .from("profiles")
           .update({
@@ -467,7 +486,6 @@ export default function AdminUsersPage() {
             },
           })
           .eq("id", userId);
-
         if (error) throw error;
       }
 
@@ -481,20 +499,36 @@ export default function AdminUsersPage() {
             },
           })
           .eq("id", userId);
-
         if (error) throw error;
       }
 
-      if (action === "verify") {
+      if (action === "verify_business") {
         const { error } = await supabase
           .from("profiles")
           .update({ business_verified: true })
           .eq("id", userId);
-
         if (error) throw error;
       }
 
-      // Rafraîchir la liste
+      if (action === "verify_insurance") {
+        const { error } = await supabase
+          .from("profiles")
+          .update({ insurance_verified: true })
+          .eq("id", userId);
+        if (error) throw error;
+      }
+
+      if (action === "unverify") {
+        const { error } = await supabase
+          .from("profiles")
+          .update({
+            business_verified: false,
+            insurance_verified: false,
+          })
+          .eq("id", userId);
+        if (error) throw error;
+      }
+
       await fetchUsers();
       setSelectedUsers([]);
       setSelectAll(false);
@@ -532,8 +566,9 @@ export default function AdminUsersPage() {
       trade_category: user.trade_category,
       skills: user.skills?.join(", "),
       hourly_rate: user.hourly_rate,
-      business_verified: user.business_verified,
-      insurance_verified: user.insurance_verified,
+      business_verified: user.business_verified ? "Yes" : "No",
+      insurance_verified: user.insurance_verified ? "Yes" : "No",
+      verification_status: user.verification_status,
       loyalty_points: user.loyalty_points,
       jobs_completed: user.jobs_completed,
       jobs_posted: user.jobs_posted,
@@ -640,6 +675,34 @@ export default function AdminUsersPage() {
     </div>
   );
 
+  const getVerificationBadge = (status: string) => {
+    switch (status) {
+      case "verified":
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-medium">
+            <BadgeCheck className="w-3 h-3" />
+            Verified
+          </span>
+        );
+      case "partial":
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-1 bg-amber-100 text-amber-800 rounded-full text-xs font-medium">
+            <Shield className="w-3 h-3" />
+            Partial
+          </span>
+        );
+      case "none":
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 text-gray-600 rounded-full text-xs font-medium">
+            <BadgeX className="w-3 h-3" />
+            Unverified
+          </span>
+        );
+      default:
+        return null;
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
@@ -673,10 +736,16 @@ export default function AdminUsersPage() {
                   {selectedUsers.length} selected
                 </span>
                 <button
-                  onClick={() => handleBulkAction("verify")}
+                  onClick={() => handleBulkAction("verify_business")}
                   className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700"
                 >
-                  Verify
+                  Verify Business
+                </button>
+                <button
+                  onClick={() => handleBulkAction("verify_insurance")}
+                  className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
+                >
+                  Verify Insurance
                 </button>
                 <button
                   onClick={() => handleBulkAction("suspend")}
@@ -735,8 +804,8 @@ export default function AdminUsersPage() {
             <StatCard
               title="Verified"
               value={stats.verified}
-              icon={Shield}
-              color="bg-amber-100 text-amber-600"
+              icon={BadgeCheck}
+              color="bg-emerald-100 text-emerald-600"
             />
           </div>
 
@@ -768,6 +837,43 @@ export default function AdminUsersPage() {
               <p className="text-xs text-gray-500">Active Reports</p>
               <p className="text-lg font-bold text-red-600">
                 {users.reduce((sum, u) => sum + (u.reports_count || 0), 0)}
+              </p>
+            </div>
+          </div>
+
+          {/* Verification Stats */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-emerald-50 rounded-lg p-3 border border-emerald-200">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-emerald-700 font-medium">
+                  Fully Verified
+                </span>
+                <BadgeCheck className="w-4 h-4 text-emerald-600" />
+              </div>
+              <p className="text-lg font-bold text-emerald-700 mt-1">
+                {stats.verified}
+              </p>
+            </div>
+            <div className="bg-amber-50 rounded-lg p-3 border border-amber-200">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-amber-700 font-medium">
+                  Partially Verified
+                </span>
+                <Shield className="w-4 h-4 text-amber-600" />
+              </div>
+              <p className="text-lg font-bold text-amber-700 mt-1">
+                {stats.partial}
+              </p>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-700 font-medium">
+                  Unverified
+                </span>
+                <BadgeX className="w-4 h-4 text-gray-600" />
+              </div>
+              <p className="text-lg font-bold text-gray-700 mt-1">
+                {stats.unverified}
               </p>
             </div>
           </div>
@@ -871,8 +977,9 @@ export default function AdminUsersPage() {
                       className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
                     >
                       <option value="all">All</option>
-                      <option value="verified">Verified</option>
-                      <option value="unverified">Unverified</option>
+                      <option value="verified">Fully Verified</option>
+                      <option value="partial">Partially Verified</option>
+                      <option value="none">Unverified</option>
                     </select>
                   </div>
                   <div>
@@ -941,6 +1048,9 @@ export default function AdminUsersPage() {
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Contact
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Verification
                     </th>
                     <th
                       className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
@@ -1070,6 +1180,25 @@ export default function AdminUsersPage() {
                         </div>
                       </td>
                       <td className="px-4 py-3">
+                        {getVerificationBadge(user.verification_status)}
+                        {user.business_verified && user.insurance_verified && (
+                          <div className="mt-1 space-y-1">
+                            {user.business_verified && (
+                              <span className="text-xs text-emerald-600 flex items-center gap-1">
+                                <BadgeCheck className="w-3 h-3" />
+                                Business
+                              </span>
+                            )}
+                            {user.insurance_verified && (
+                              <span className="text-xs text-blue-600 flex items-center gap-1">
+                                <Shield className="w-3 h-3" />
+                                Insurance
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
                         {user.role === "worker" && (
                           <div className="space-y-1">
                             <p className="text-sm">
@@ -1153,13 +1282,6 @@ export default function AdminUsersPage() {
                               {user.reports_count} reports
                             </span>
                           ) : null}
-                          {(user.business_verified ||
-                            user.insurance_verified) && (
-                            <span className="text-xs text-green-600 flex items-center gap-1">
-                              <Shield className="w-3 h-3" />
-                              Verified
-                            </span>
-                          )}
                         </div>
                       </td>
                       <td className="px-4 py-3">
@@ -1210,12 +1332,43 @@ export default function AdminUsersPage() {
                                 {!user.business_verified && (
                                   <button
                                     onClick={() =>
-                                      handleStatusChange(user.id, "verify")
+                                      handleStatusChange(
+                                        user.id,
+                                        "verify_business"
+                                      )
+                                    }
+                                    className="w-full text-left px-4 py-2 text-sm text-emerald-600 hover:bg-emerald-50"
+                                  >
+                                    <BadgeCheck className="w-4 h-4 inline mr-2" />
+                                    Verify Business
+                                  </button>
+                                )}
+
+                                {!user.insurance_verified && (
+                                  <button
+                                    onClick={() =>
+                                      handleStatusChange(
+                                        user.id,
+                                        "verify_insurance"
+                                      )
                                     }
                                     className="w-full text-left px-4 py-2 text-sm text-blue-600 hover:bg-blue-50"
                                   >
-                                    <CheckCircle className="w-4 h-4 inline mr-2" />
-                                    Verify Business
+                                    <Shield className="w-4 h-4 inline mr-2" />
+                                    Verify Insurance
+                                  </button>
+                                )}
+
+                                {(user.business_verified ||
+                                  user.insurance_verified) && (
+                                  <button
+                                    onClick={() =>
+                                      handleStatusChange(user.id, "unverify")
+                                    }
+                                    className="w-full text-left px-4 py-2 text-sm text-amber-600 hover:bg-amber-50"
+                                  >
+                                    <XCircle className="w-4 h-4 inline mr-2" />
+                                    Remove Verification
                                   </button>
                                 )}
 
@@ -1302,6 +1455,11 @@ export default function AdminUsersPage() {
                   </div>
 
                   <div className="ml-14 space-y-3">
+                    {/* Verification */}
+                    <div className="flex items-center gap-2">
+                      {getVerificationBadge(user.verification_status)}
+                    </div>
+
                     {/* Contact Info */}
                     <div className="grid grid-cols-2 gap-2 text-sm">
                       {user.phone && (
