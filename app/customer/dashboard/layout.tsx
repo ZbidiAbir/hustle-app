@@ -180,7 +180,7 @@ export default function CustomerLayout({
                 href="/customer/dashboard"
                 className="flex items-center gap-2"
               >
-                <span className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                <span className="text-2xl font-bold bg-linear-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
                   HUSTLE
                 </span>
                 <span className="hidden sm:inline-block px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
@@ -201,7 +201,7 @@ export default function CustomerLayout({
                   className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   aria-label="User menu"
                 >
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center text-white font-semibold overflow-hidden">
+                  <div className="w-8 h-8 rounded-full bg-linear-to-r from-blue-500 to-purple-500 flex items-center justify-center text-white font-semibold overflow-hidden">
                     {user?.avatar_url ? (
                       <img
                         src={user.avatar_url}
@@ -228,7 +228,7 @@ export default function CustomerLayout({
                     <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-lg border border-gray-200 z-50">
                       <div className="p-4 border-b border-gray-100">
                         <div className="flex items-center gap-3 mb-2">
-                          <div className="w-10 h-10 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center text-white font-semibold overflow-hidden">
+                          <div className="w-10 h-10 rounded-full bg-linear-to-r from-blue-500 to-purple-500 flex items-center justify-center text-white font-semibold overflow-hidden">
                             {user?.avatar_url ? (
                               <img
                                 src={user.avatar_url}
@@ -255,6 +255,9 @@ export default function CustomerLayout({
                             </div>
                           </div>
                         </div>
+                        <p className="text-sm text-gray-500 break-all">
+                          {user?.company_name}
+                        </p>
                         <p className="text-sm text-gray-500 break-all">
                           {user?.email}
                         </p>
@@ -295,11 +298,11 @@ export default function CustomerLayout({
         ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
       `}
       >
-        <div className="h-full overflow-y-auto p-4 flex flex-col">
+        <div className="h-full overflow-y-auto p-2 flex flex-col">
           {/* User profile summary */}
-          <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl">
+          <div className="mb-6 p-3 rounded-xl">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center text-white font-bold text-lg overflow-hidden flex-shrink-0">
+              <div className="w-12 h-12 rounded-full bg-linear-to-r from-blue-500 to-purple-500 flex items-center justify-center text-white font-bold text-lg overflow-hidden shrink-0">
                 {user?.avatar_url ? (
                   <img
                     src={user.avatar_url}
@@ -310,17 +313,20 @@ export default function CustomerLayout({
                   getInitials(user?.full_name)
                 )}
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-medium text-gray-900 truncate">
+              <div className="flex-1 ">
+                <p className=" text-gray-900 truncate text-xs">
                   {user?.full_name || "User"}
                 </p>
-                <div className="flex items-center gap-1 text-sm text-gray-500">
-                  {user?.account_type && getAccountTypeIcon(user.account_type)}
-                  <span className="truncate">
-                    {user?.account_type
-                      ? getAccountTypeLabel(user.account_type)
-                      : "Customer"}
-                  </span>
+
+                <div className="flex items-center  text-sm text-gray-500">
+                  <img
+                    //@ts-ignore
+                    src={user?.company_logo_url}
+                    alt=""
+                    className="w-4 h-4 rounded-full"
+                  />{" "}
+                  <span className="text-xs">{user?.company_name}</span>(
+                  {user?.account_type})
                 </div>
               </div>
             </div>
@@ -339,7 +345,7 @@ export default function CustomerLayout({
                   href={item.href}
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg transition ${
                     isActive
-                      ? "bg-gradient-to-r from-blue-50 to-purple-50 text-blue-700"
+                      ? "bg-linear-to-r from-blue-50 to-purple-50 text-blue-700"
                       : "text-gray-700 hover:bg-gray-100"
                   }`}
                   onClick={() => setSidebarOpen(false)}

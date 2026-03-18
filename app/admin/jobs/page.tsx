@@ -32,9 +32,12 @@ type Job = {
   title: string;
   description: string;
   category: string;
-  price: number;
+  price?: number;
+  fixed_rate?: number;
   min_rate?: number;
   max_rate?: number;
+  hourly_rate?: number;
+  pay_type?: string;
   location: string;
   status:
     | "open"
@@ -48,18 +51,20 @@ type Job = {
   customer_id: string;
   worker_id?: string;
   customer?: {
+    id: string;
     full_name: string;
     email: string;
     avatar_url?: string;
-    type?: "homeowner" | "business";
   };
   worker?: {
+    id: string;
     full_name: string;
     email: string;
     avatar_url?: string;
   };
   applications_count?: number;
   reported_count?: number;
+  customer_type?: "homeowner" | "business";
 };
 
 export default function AdminJobsPage() {
@@ -102,18 +107,47 @@ export default function AdminJobsPage() {
     try {
       setLoading(true);
 
+      // Récupérer tous les jobs avec tous les champs de prix
       const { data: jobsData, error: jobsError } = await supabase
         .from("jobs")
-        .select("*")
+        .select(
+          `
+          id,
+          title,
+          description,
+          category,
+          price,
+          fixed_rate,
+          min_rate,
+          max_rate,
+          hourly_rate,
+          pay_type,
+          location,
+          status,
+          created_at,
+          customer_id,
+          worker_id
+        `
+        )
         .order("created_at", { ascending: false });
 
       if (jobsError) throw jobsError;
 
-      const customerIds =
-        jobsData?.map((j) => j.customer_id).filter(Boolean) || [];
-      const workerIds = jobsData?.map((j) => j.worker_id).filter(Boolean) || [];
+      if (!jobsData) {
+        setJobs([]);
+        return;
+      }
+
+      // Récupérer les IDs uniques des clients et workers
+      const customerIds = [
+        ...new Set(jobsData.map((j) => j.customer_id).filter(Boolean)),
+      ];
+      const workerIds = [
+        ...new Set(jobsData.map((j) => j.worker_id).filter(Boolean)),
+      ];
       const allIds = [...new Set([...customerIds, ...workerIds])];
 
+      // Récupérer les profils
       const { data: profilesData } = await supabase
         .from("profiles")
         .select("id, full_name, email, avatar_url")
@@ -121,50 +155,67 @@ export default function AdminJobsPage() {
 
       const profilesMap = new Map(profilesData?.map((p) => [p.id, p]) || []);
 
-      const jobsWithDetails = (jobsData || []).map((job) => ({
-        ...job,
-        customer: profilesMap.get(job.customer_id),
-        worker: job.worker_id ? profilesMap.get(job.worker_id) : null,
-      }));
-
-      const jobsWithCounts = await Promise.all(
-        jobsWithDetails.map(async (job) => {
+      // Récupérer le nombre d'applications pour chaque job
+      const jobsWithDetails = await Promise.all(
+        jobsData.map(async (job) => {
           const { count } = await supabase
             .from("applications")
             .select("*", { count: "exact", head: true })
             .eq("job_id", job.id);
 
-          const scheduledDate = new Date(job.created_at);
-          scheduledDate.setDate(scheduledDate.getDate() + 3);
+          // Déterminer le type de client (basé sur des données réelles si disponibles)
+          const customerProfile = profilesMap.get(job.customer_id);
+          const customerType = //@ts-ignore
+
+          customerProfile?.metadata?.business_name
+            ? "business"
+            : "homeowner";
 
           return {
             ...job,
+            customer: customerProfile,
+            worker: job.worker_id ? profilesMap.get(job.worker_id) : null,
             applications_count: count || 0,
-            scheduled_date: scheduledDate.toISOString(),
-            customer_type: Math.random() > 0.5 ? "homeowner" : "business",
+            customer_type: customerType,
           };
         })
       );
 
-      setJobs(jobsWithCounts);
+      setJobs(
+        //@ts-ignore
+        jobsWithDetails
+      );
 
+      // Extraire les catégories uniques
       const uniqueCategories = [
-        ...new Set(jobsWithCounts.map((j) => j.category).filter(Boolean)),
+        ...new Set(jobsWithDetails.map((j) => j.category).filter(Boolean)),
       ];
       setCategories(uniqueCategories);
 
+      // Calculer les statistiques
+      const totalValue = jobsWithDetails.reduce((sum, job) => {
+        if (job.pay_type === "Fixed" && job.fixed_rate) {
+          return sum + job.fixed_rate;
+        } else if (job.pay_type === "Hourly" && job.hourly_rate) {
+          return sum + job.hourly_rate * 8; // Estimation 8h
+        } else if (job.price) {
+          return sum + job.price;
+        }
+        return sum;
+      }, 0);
+
       setStats({
-        total: jobsWithCounts.length,
-        open: jobsWithCounts.filter((j) => j.status === "open").length,
-        assigned: jobsWithCounts.filter((j) => j.status === "assigned").length,
-        inProgress: jobsWithCounts.filter((j) => j.status === "in_progress")
+        total: jobsWithDetails.length,
+        open: jobsWithDetails.filter((j) => j.status === "open").length,
+        assigned: jobsWithDetails.filter((j) => j.status === "assigned").length,
+        inProgress: jobsWithDetails.filter((j) => j.status === "in_progress")
           .length,
-        completed: jobsWithCounts.filter((j) => j.status === "completed")
+        completed: jobsWithDetails.filter((j) => j.status === "completed")
           .length,
-        cancelled: jobsWithCounts.filter((j) => j.status === "cancelled")
+        cancelled: jobsWithDetails.filter((j) => j.status === "cancelled")
           .length,
-        reported: jobsWithCounts.filter((j) => j.status === "reported").length,
-        totalValue: jobsWithCounts.reduce((sum, j) => sum + (j.price || 0), 0),
+        reported: jobsWithDetails.filter((j) => j.status === "reported").length,
+        totalValue: totalValue,
       });
     } catch (err) {
       console.error("Error fetching jobs:", err);
@@ -260,13 +311,51 @@ export default function AdminJobsPage() {
   };
 
   const formatPrice = (job: Job) => {
-    if (job.min_rate && job.max_rate) {
-      return `$${job.min_rate.toLocaleString()} - $${job.max_rate.toLocaleString()}`;
+    if (!job) return "$0";
+
+    switch (job.pay_type) {
+      case "Fixed":
+        return job.fixed_rate
+          ? new Intl.NumberFormat("en-US", {
+              style: "currency",
+              currency: "USD",
+              minimumFractionDigits: 0,
+              maximumFractionDigits: 0,
+            }).format(job.fixed_rate)
+          : "$0";
+
+      case "Range":
+        if (job.min_rate && job.max_rate) {
+          return `${new Intl.NumberFormat("en-US", {
+            style: "currency",
+            currency: "USD",
+            minimumFractionDigits: 0,
+          }).format(job.min_rate)} - ${new Intl.NumberFormat("en-US", {
+            style: "currency",
+            currency: "USD",
+            minimumFractionDigits: 0,
+          }).format(job.max_rate)}`;
+        }
+        return "$0";
+
+      case "Hourly":
+        return job.hourly_rate
+          ? new Intl.NumberFormat("en-US", {
+              style: "currency",
+              currency: "USD",
+              minimumFractionDigits: 0,
+            }).format(job.hourly_rate) + "/hr"
+          : "$0";
+
+      default:
+        return job.price
+          ? new Intl.NumberFormat("en-US", {
+              style: "currency",
+              currency: "USD",
+              minimumFractionDigits: 0,
+            }).format(job.price)
+          : "$0";
     }
-    if (job.price) {
-      return `$${job.price.toLocaleString()}`;
-    }
-    return "$0";
   };
 
   const formatDate = (dateString: string) => {
@@ -326,7 +415,7 @@ export default function AdminJobsPage() {
       .map((word) => word[0])
       .join("")
       .toUpperCase()
-      .slice(0, 1);
+      .slice(0, 2);
   };
 
   const getAvatarColor = (id: string) => {
@@ -384,16 +473,16 @@ export default function AdminJobsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8 ">
-      <div className="max-w-7xl mx-auto space-y-6">
-        {/* Header with Breadcrumb */}
+    <div className="min-h-screen bg-gray-50 py-8">
+      <div className="max-w-7xl mx-auto space-y-6 px-4 sm:px-6 lg:px-8">
+        {/* Header */}
         <div>
-          <div className="flex items-center gap-2 text-sm text-gray-500 mb-2">
-            <span>Job management</span>
-            <ChevronRight className="w-4 h-4" />
-            <span className="text-gray-900 font-medium">Job open</span>
-          </div>
-          <h1 className="text-2xl font-semibold text-gray-900">Job open</h1>
+          <h1 className="text-2xl font-semibold text-gray-900">
+            Job Management
+          </h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Manage and monitor all jobs on the platform
+          </p>
         </div>
 
         {/* Stats Cards */}
@@ -421,7 +510,12 @@ export default function AdminJobsPage() {
           />
           <StatCard
             title="Total Value"
-            value={`$${(stats.totalValue / 1000).toFixed(1)}K`}
+            value={new Intl.NumberFormat("en-US", {
+              style: "currency",
+              currency: "USD",
+              notation: "compact",
+              maximumFractionDigits: 1,
+            }).format(stats.totalValue)}
             icon={DollarSign}
             color="bg-purple-100 text-purple-600"
             trend={15}
@@ -537,10 +631,10 @@ export default function AdminJobsPage() {
                 Cancel
               </button>
               <button
-                onClick={() => handleBulkAction("deleted")}
-                className="px-3 py-1.5 bg-rose-600 text-white text-xs rounded-lg hover:bg-rose-700 transition"
+                onClick={() => setSelectedJobs([])}
+                className="px-3 py-1.5 bg-gray-600 text-white text-xs rounded-lg hover:bg-gray-700 transition"
               >
-                Delete
+                Clear
               </button>
             </div>
           </div>
@@ -561,10 +655,7 @@ export default function AdminJobsPage() {
                     />
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    ID
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Job Title
+                    Job Details
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Client
@@ -579,7 +670,7 @@ export default function AdminJobsPage() {
                     Amount
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Scheduled
+                    Created
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Status
@@ -590,8 +681,7 @@ export default function AdminJobsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {paginatedJobs.map((job, index) => {
-                  const jobNumber = 241 + index;
+                {paginatedJobs.map((job) => {
                   const statusColors = getStatusColor(job.status);
                   const StatusIcon = getStatusIcon(job.status);
 
@@ -605,54 +695,59 @@ export default function AdminJobsPage() {
                           className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
                         />
                       </td>
-                      <td className="px-4 py-3 text-xs font-mono text-gray-500">
-                        {jobNumber.toString().padStart(4, "0")}
-                      </td>
                       <td className="px-4 py-3">
                         <div className="font-medium text-gray-900">
-                          {job.title || "Job name goes here"}
+                          {job.title || "Untitled Job"}
                         </div>
-                        <div className="text-xs text-gray-500 mt-0.5">
-                          {job.category || "Job category"}
+                        <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
+                          <span className="px-2 py-0.5 bg-gray-100 rounded-full">
+                            {job.category || "Uncategorized"}
+                          </span>
+                          {job.applications_count ? (
+                            <span className="flex items-center gap-1">
+                              <Users className="w-3 h-3" />
+                              {job.applications_count} apps
+                            </span>
+                          ) : null}
                         </div>
                       </td>
                       <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          {/* Avatar ou Initiales */}
-                          {job.customer?.avatar_url ? (
-                            <img
-                              src={job.customer.avatar_url}
-                              alt={job.customer.full_name}
-                              className="w-8 h-8 rounded-full object-cover"
-                            />
-                          ) : (
-                            <div
-                              className={`w-8 h-8 rounded-full ${getAvatarColor(
-                                job.customer_id
-                              )} flex items-center justify-center text-white text-xs font-medium`}
-                            >
-                              {getInitials(
-                                job.customer?.full_name || "Unknown"
-                              )}
-                            </div>
-                          )}
-                          <div>
-                            <div className="text-sm font-medium text-gray-900">
-                              {job.customer?.full_name || "Company name"}
-                            </div>
-                            <div className="flex items-center gap-1 text-xs text-gray-500">
-                              {getCustomerTypeIcon(job.customer?.type)}
-                              <span>
-                                {getCustomerTypeLabel(job.customer?.type)}
-                              </span>
+                        {job.customer ? (
+                          <div className="flex items-center gap-2">
+                            {job.customer.avatar_url ? (
+                              <img
+                                src={job.customer.avatar_url}
+                                alt={job.customer.full_name}
+                                className="w-8 h-8 rounded-full object-cover"
+                              />
+                            ) : (
+                              <div
+                                className={`w-8 h-8 rounded-full ${getAvatarColor(
+                                  job.customer_id
+                                )} flex items-center justify-center text-white text-xs font-medium`}
+                              >
+                                {getInitials(job.customer.full_name || "U")}
+                              </div>
+                            )}
+                            <div>
+                              <div className="text-sm font-medium text-gray-900">
+                                {job.customer.full_name || "Unknown"}
+                              </div>
+                              <div className="flex items-center gap-1 text-xs text-gray-500">
+                                {getCustomerTypeIcon(job.customer_type)}
+                                <span>
+                                  {getCustomerTypeLabel(job.customer_type)}
+                                </span>
+                              </div>
                             </div>
                           </div>
-                        </div>
+                        ) : (
+                          <span className="text-xs text-gray-400">Unknown</span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         {job.worker ? (
                           <div className="flex items-center gap-2">
-                            {/* Avatar ou Initiales pour le worker */}
                             {job.worker.avatar_url ? (
                               <img
                                 src={job.worker.avatar_url}
@@ -674,34 +769,42 @@ export default function AdminJobsPage() {
                           </div>
                         ) : (
                           <span className="text-xs text-gray-400 italic">
-                            No applicants
+                            Not assigned
                           </span>
                         )}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1 text-sm text-gray-600">
-                          <MapPin className="w-3 h-3 text-gray-400" />
-                          {job.location || "Brooklyn, NY"}
+                          <MapPin className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                          <span className="truncate max-w-[120px]">
+                            {job.location || "Location TBD"}
+                          </span>
                         </div>
                       </td>
                       <td className="px-4 py-3">
                         <span className="text-sm font-medium text-gray-900">
                           {formatPrice(job)}
                         </span>
+                        {job.pay_type && (
+                          <span className="text-xs text-gray-400 block">
+                            {job.pay_type}
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1 text-sm text-gray-600">
                           <Calendar className="w-3 h-3 text-gray-400" />
-                          {formatDate(job.scheduled_date || job.created_at)}
+                          {formatDate(job.created_at)}
                         </div>
                       </td>
                       <td className="px-4 py-3">
                         <span
                           className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium border ${statusColors}`}
                         >
-                          {job.status === "open"
-                            ? "Job Open"
-                            : job.status.replace("_", " ")}
+                          {job.status === "in_progress"
+                            ? "In Progress"
+                            : job.status.charAt(0).toUpperCase() +
+                              job.status.slice(1)}
                         </span>
                       </td>
                       <td className="px-4 py-3">
@@ -713,7 +816,7 @@ export default function AdminJobsPage() {
                           >
                             <Eye className="w-4 h-4 text-gray-500" />
                           </Link>
-                          <div className="relative group">
+                          {/* <div className="relative group">
                             <button className="p-1.5 hover:bg-gray-100 rounded-lg transition">
                               <MoreHorizontal className="w-4 h-4 text-gray-500" />
                             </button>
@@ -723,42 +826,32 @@ export default function AdminJobsPage() {
                                   onClick={() =>
                                     handleStatusChange(job.id, "completed")
                                   }
-                                  className="w-full text-left px-4 py-2 text-sm text-emerald-600 hover:bg-emerald-50"
+                                  className="w-full text-left px-4 py-2 text-sm text-emerald-600 hover:bg-emerald-50 flex items-center gap-2"
                                 >
-                                  <CheckCircle className="w-4 h-4 inline mr-2" />
+                                  <CheckCircle className="w-4 h-4" />
                                   Mark Completed
                                 </button>
                                 <button
                                   onClick={() =>
                                     handleStatusChange(job.id, "cancelled")
                                   }
-                                  className="w-full text-left px-4 py-2 text-sm text-amber-600 hover:bg-amber-50"
+                                  className="w-full text-left px-4 py-2 text-sm text-amber-600 hover:bg-amber-50 flex items-center gap-2"
                                 >
-                                  <XCircle className="w-4 h-4 inline mr-2" />
+                                  <XCircle className="w-4 h-4" />
                                   Cancel Job
                                 </button>
                                 <button
                                   onClick={() =>
                                     handleStatusChange(job.id, "reported")
                                   }
-                                  className="w-full text-left px-4 py-2 text-sm text-rose-600 hover:bg-rose-50"
+                                  className="w-full text-left px-4 py-2 text-sm text-rose-600 hover:bg-rose-50 flex items-center gap-2"
                                 >
-                                  <AlertTriangle className="w-4 h-4 inline mr-2" />
+                                  <AlertTriangle className="w-4 h-4" />
                                   Report Job
-                                </button>
-                                <div className="border-t border-gray-100 my-1"></div>
-                                <button
-                                  onClick={() =>
-                                    handleStatusChange(job.id, "deleted")
-                                  }
-                                  className="w-full text-left px-4 py-2 text-sm text-rose-600 hover:bg-rose-50"
-                                >
-                                  <Trash2 className="w-4 h-4 inline mr-2" />
-                                  Delete Job
                                 </button>
                               </div>
                             </div>
-                          </div>
+                          </div> */}
                         </div>
                       </td>
                     </tr>
@@ -782,6 +875,20 @@ export default function AdminJobsPage() {
                   ? "Try adjusting your search or filters"
                   : "No jobs have been posted yet"}
               </p>
+              {(searchTerm ||
+                statusFilter !== "all" ||
+                categoryFilter !== "all") && (
+                <button
+                  onClick={() => {
+                    setSearchTerm("");
+                    setStatusFilter("all");
+                    setCategoryFilter("all");
+                  }}
+                  className="mt-4 text-sm text-blue-600 hover:text-blue-700 font-medium"
+                >
+                  Clear all filters
+                </button>
+              )}
             </div>
           )}
 
@@ -808,30 +915,9 @@ export default function AdminJobsPage() {
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
-                {[...Array(Math.min(5, totalPages))].map((_, i) => {
-                  let pageNum = i + 1;
-                  if (totalPages > 5) {
-                    if (currentPage > 3) {
-                      pageNum = currentPage - 3 + i;
-                    }
-                  }
-                  if (pageNum <= totalPages) {
-                    return (
-                      <button
-                        key={pageNum}
-                        onClick={() => setCurrentPage(pageNum)}
-                        className={`w-8 h-8 text-sm rounded-lg ${
-                          currentPage === pageNum
-                            ? "bg-blue-600 text-white"
-                            : "hover:bg-gray-100"
-                        }`}
-                      >
-                        {pageNum}
-                      </button>
-                    );
-                  }
-                  return null;
-                })}
+                <span className="text-sm text-gray-700">
+                  Page {currentPage} of {totalPages}
+                </span>
                 <button
                   onClick={() =>
                     setCurrentPage((p) => Math.min(totalPages, p + 1))

@@ -30,7 +30,11 @@ import {
   Home,
   CreditCard,
   Download,
+  BadgeCheck,
+  Ban,
+  RotateCcw,
 } from "lucide-react";
+import { Job } from "@/types/job";
 
 type WorkExperience = {
   id: string;
@@ -56,6 +60,7 @@ type UserProfile = {
   address: string | null;
   city: string | null;
   created_at: string;
+  updated_at?: string;
 
   // Professional Details (Worker only)
   job_title: string | null;
@@ -77,6 +82,12 @@ type UserProfile = {
   insurance_url: string | null;
   insurance_verified: boolean;
 
+  // Business Verification
+  business_verified?: boolean;
+  business_verification_date?: string | null;
+  business_verified_by?: string | null;
+  verification_notes?: string | null;
+
   work_experience?: WorkExperience[];
 };
 
@@ -86,14 +97,6 @@ type UserStats = {
   rating: number | null;
   total_earned: number;
   total_spent: number;
-};
-
-type Job = {
-  id: string;
-  title: string;
-  price: number;
-  status: string;
-  created_at: string;
 };
 
 export default function AdminUserDetailPage() {
@@ -106,6 +109,57 @@ export default function AdminUserDetailPage() {
     total_earned: 0,
     total_spent: 0,
   });
+
+  // Fonction pour formater le prix d'un job
+  const formatJobPrice = (job: Job) => {
+    if (!job) return "$0";
+
+    switch (job.pay_type) {
+      case "Fixed":
+        return job.fixed_rate
+          ? new Intl.NumberFormat("en-US", {
+              style: "currency",
+              currency: "USD",
+              minimumFractionDigits: 0,
+              maximumFractionDigits: 0,
+            }).format(job.fixed_rate)
+          : "$0";
+
+      case "Range":
+        if (job.min_rate && job.max_rate) {
+          return `${new Intl.NumberFormat("en-US", {
+            style: "currency",
+            currency: "USD",
+            minimumFractionDigits: 0,
+          }).format(job.min_rate)} - ${new Intl.NumberFormat("en-US", {
+            style: "currency",
+            currency: "USD",
+            minimumFractionDigits: 0,
+          }).format(job.max_rate)}`;
+        }
+        return "$0";
+
+      case "Hourly":
+        return job.hourly_rate
+          ? new Intl.NumberFormat("en-US", {
+              style: "currency",
+              currency: "USD",
+              minimumFractionDigits: 0,
+            }).format(job.hourly_rate) + "/hr"
+          : "$0";
+
+      default:
+        // Fallback au champ price si pay_type n'est pas défini
+        return job.price
+          ? new Intl.NumberFormat("en-US", {
+              style: "currency",
+              currency: "USD",
+              minimumFractionDigits: 0,
+            }).format(job.price)
+          : "$0";
+    }
+  };
+
   const [recentJobs, setRecentJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -116,7 +170,12 @@ export default function AdminUserDetailPage() {
     | "insurance"
     | "experience"
     | "jobs"
+    | "verification"
   >("overview");
+  const [verificationLoading, setVerificationLoading] = useState(false);
+  const [verificationNotes, setVerificationNotes] = useState("");
+  const [showVerificationModal, setShowVerificationModal] = useState(false);
+
   const params = useParams();
   const router = useRouter();
 
@@ -171,43 +230,96 @@ export default function AdminUserDetailPage() {
 
       // 3. Récupérer les statistiques selon le rôle
       if (userData.role === "worker") {
-        // Jobs complétés
+        // Jobs complétés - Récupérer TOUS les champs de prix
         const { data: completedJobs, error: jobsError } = await supabase
           .from("jobs")
-          .select("id, title, price, status, created_at")
+          .select(
+            `
+            id, 
+            title, 
+            price,
+            fixed_rate,
+            min_rate,
+            max_rate,
+            hourly_rate,
+            pay_type,
+            status, 
+            created_at
+          `
+          )
           .eq("worker_id", userId)
           .eq("status", "completed")
           .order("created_at", { ascending: false });
 
         if (!jobsError && completedJobs) {
+          // Calculer le total gagné en fonction du type de paiement
+          const totalEarned = completedJobs.reduce((sum, job) => {
+            if (job.pay_type === "Fixed" && job.fixed_rate) {
+              return sum + job.fixed_rate;
+            } else if (job.pay_type === "Hourly" && job.hourly_rate) {
+              // Estimation approximative pour les jobs horaires (ex: 8 heures)
+              return sum + job.hourly_rate * 8;
+            } else if (job.price) {
+              return sum + job.price;
+            }
+            return sum;
+          }, 0);
+
           setStats((prev) => ({
             ...prev,
             jobs_completed: completedJobs.length,
-            total_earned: completedJobs.reduce(
-              (sum, job) => sum + (job.price || 0),
-              0
-            ),
+            total_earned: totalEarned,
           }));
-          setRecentJobs(completedJobs.slice(0, 5));
+          setRecentJobs(
+            //@ts-ignore
+            completedJobs.slice(0, 5)
+          );
         }
       } else if (userData.role === "customer") {
-        // Jobs postés
+        // Jobs postés - Récupérer TOUS les champs de prix
         const { data: postedJobs, error: jobsError } = await supabase
           .from("jobs")
-          .select("id, title, price, status, created_at")
+          .select(
+            `
+            id, 
+            title, 
+            price,
+            fixed_rate,
+            min_rate,
+            max_rate,
+            hourly_rate,
+            pay_type,
+            status, 
+            created_at
+          `
+          )
           .eq("customer_id", userId)
           .order("created_at", { ascending: false });
 
         if (!jobsError && postedJobs) {
+          // Calculer le total dépensé en fonction du type de paiement
+          const totalSpent = postedJobs.reduce((sum, job) => {
+            if (job.pay_type === "Fixed" && job.fixed_rate) {
+              return sum + job.fixed_rate;
+            } else if (job.pay_type === "Hourly" && job.hourly_rate) {
+              // Estimation approximative pour les jobs horaires
+              return sum + job.hourly_rate * 8;
+            } else if (job.price) {
+              return sum + job.price;
+            }
+            return sum;
+          }, 0);
+
           setStats((prev) => ({
             ...prev,
             jobs_posted: postedJobs.length,
-            total_spent: postedJobs.reduce(
-              (sum, job) => sum + (job.price || 0),
-              0
-            ),
+            total_spent: totalSpent,
           }));
-          setRecentJobs(postedJobs.slice(0, 5));
+          setRecentJobs(
+            //@ts-ignore
+
+            postedJobs.slice(0, 5)
+          );
         }
       }
     } catch (err: any) {
@@ -215,6 +327,93 @@ export default function AdminUserDetailPage() {
       setError(err.message || "Failed to load user details");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleVerifyWorker = async () => {
+    if (!user || user.role !== "worker") return;
+
+    try {
+      setVerificationLoading(true);
+
+      const { data: adminUser } = await supabase.auth.getUser();
+      const adminId = adminUser.user?.id;
+
+      const { error } = await supabase
+        .from("profiles")
+        .update({
+          business_verified: true,
+          business_verification_date: new Date().toISOString(),
+          business_verified_by: adminId,
+          verification_notes: verificationNotes || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", user.id);
+
+      if (error) throw error;
+
+      // Mettre à jour l'état local
+      setUser({
+        ...user,
+        business_verified: true,
+        business_verification_date: new Date().toISOString(),
+        business_verified_by: adminId,
+        verification_notes: verificationNotes,
+        updated_at: new Date().toISOString(),
+      });
+
+      setShowVerificationModal(false);
+      setVerificationNotes("");
+
+      // Afficher une notification de succès
+      alert("Worker has been successfully verified!");
+    } catch (error) {
+      console.error("Error verifying worker:", error);
+      alert("Failed to verify worker. Please try again.");
+    } finally {
+      setVerificationLoading(false);
+    }
+  };
+
+  const handleUnverifyWorker = async () => {
+    if (!user || user.role !== "worker") return;
+
+    if (
+      !confirm("Are you sure you want to remove verification from this worker?")
+    ) {
+      return;
+    }
+
+    try {
+      setVerificationLoading(true);
+
+      const { error } = await supabase
+        .from("profiles")
+        .update({
+          business_verified: false,
+          business_verification_date: null,
+          business_verified_by: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", user.id);
+
+      if (error) throw error;
+
+      // Mettre à jour l'état local
+      setUser({
+        ...user,
+        business_verified: false,
+        business_verification_date: null,
+        business_verified_by: null,
+        updated_at: new Date().toISOString(),
+      });
+
+      alert("Verification has been removed.");
+    } catch (error) {
+      console.error("Error removing verification:", error);
+      alert("Failed to remove verification. Please try again.");
+    } finally {
+      setVerificationLoading(false);
     }
   };
 
@@ -304,7 +503,7 @@ export default function AdminUserDetailPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-white border-b border-gray-200 shadow-sm">
+      <div className="sticky top-0 z-10 bg-white  shadow-sm">
         <div className="px-4 sm:px-6 lg:px-8 py-4">
           {/* Breadcrumb */}
           <div className="flex items-center gap-2 text-sm text-gray-500 mb-2">
@@ -377,11 +576,24 @@ export default function AdminUserDetailPage() {
                 <Shield className="w-3 h-3" />
                 {user.role}
               </span>
+
+              {user.role === "worker" && (
+                <span
+                  className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium ${
+                    user.business_verified
+                      ? "bg-green-100 text-green-800"
+                      : "bg-yellow-100 text-yellow-800"
+                  }`}
+                >
+                  <BadgeCheck className="w-3 h-3" />
+                  {user.business_verified ? "Verified" : "Unverified"}
+                </span>
+              )}
             </div>
           </div>
 
           {/* Tabs */}
-          <div className="flex gap-4 mt-4 border-b overflow-x-auto pb-1">
+          <div className="flex gap-4 mt-4  overflow-x-auto pb-1">
             <button
               onClick={() => setActiveTab("overview")}
               className={`px-3 py-2 text-sm font-medium transition border-b-2 ${
@@ -394,6 +606,16 @@ export default function AdminUserDetailPage() {
             </button>
             {user.role === "worker" && (
               <>
+                <button
+                  onClick={() => setActiveTab("verification")}
+                  className={`px-3 py-2 text-sm font-medium transition border-b-2 ${
+                    activeTab === "verification"
+                      ? "text-blue-600 border-blue-600"
+                      : "text-gray-500 border-transparent hover:text-gray-700"
+                  }`}
+                >
+                  Verification
+                </button>
                 <button
                   onClick={() => setActiveTab("professional")}
                   className={`px-3 py-2 text-sm font-medium transition border-b-2 ${
@@ -526,9 +748,14 @@ export default function AdminUserDetailPage() {
                             <p className="text-xs text-gray-500">
                               {formatDate(job.created_at)}
                             </p>
+                            {job.pay_type && (
+                              <p className="text-xs text-gray-400 mt-1">
+                                {job.pay_type}
+                              </p>
+                            )}
                           </div>
                           <span className="font-semibold text-gray-900">
-                            ${job.price}
+                            {formatJobPrice(job)}
                           </span>
                         </div>
                       ))}
@@ -590,6 +817,220 @@ export default function AdminUserDetailPage() {
                     </Link>
                   </div>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Verification Tab (Worker only) */}
+          {activeTab === "verification" && user.role === "worker" && (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    Business Verification
+                  </h3>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Verify this worker's business and identity
+                  </p>
+                </div>
+                <span
+                  className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium ${
+                    user.business_verified
+                      ? "bg-green-100 text-green-800"
+                      : "bg-yellow-100 text-yellow-800"
+                  }`}
+                >
+                  <BadgeCheck className="w-4 h-4" />
+                  {user.business_verified ? "Verified" : "Not Verified"}
+                </span>
+              </div>
+
+              {/* Verification Status Card */}
+              <div className="bg-gray-50 rounded-xl p-6 mb-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">
+                      Verification Status
+                    </p>
+                    {user.business_verified ? (
+                      <div className="flex items-center gap-2 text-green-600">
+                        <CheckCircle className="w-5 h-5" />
+                        <span className="font-medium">Verified</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 text-yellow-600">
+                        <Clock className="w-5 h-5" />
+                        <span className="font-medium">
+                          Pending Verification
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {user.business_verification_date && (
+                    <div>
+                      <p className="text-xs text-gray-500 mb-1">
+                        Verification Date
+                      </p>
+                      <p className="font-medium text-gray-900">
+                        {formatDate(user.business_verification_date)}
+                      </p>
+                    </div>
+                  )}
+
+                  {user.business_verified_by && (
+                    <div>
+                      <p className="text-xs text-gray-500 mb-1">Verified By</p>
+                      <p className="font-medium text-gray-900">
+                        Admin ID: {user.business_verified_by.slice(0, 8)}...
+                      </p>
+                    </div>
+                  )}
+
+                  {user.verification_notes && (
+                    <div className="col-span-2">
+                      <p className="text-xs text-gray-500 mb-1">
+                        Verification Notes
+                      </p>
+                      <p className="text-sm text-gray-700 bg-white p-3 rounded-lg border border-gray-200">
+                        {user.verification_notes}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Verification Checklist */}
+              <div className="mb-6">
+                <h4 className="font-medium text-gray-900 mb-3">
+                  Verification Checklist
+                </h4>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                    <div
+                      className={`w-5 h-5 rounded-full flex items-center justify-center ${
+                        user.insurance_verified
+                          ? "bg-green-100"
+                          : "bg-yellow-100"
+                      }`}
+                    >
+                      {user.insurance_verified ? (
+                        <CheckCircle className="w-4 h-4 text-green-600" />
+                      ) : (
+                        <Clock className="w-4 h-4 text-yellow-600" />
+                      )}
+                    </div>
+                    <span className="text-sm text-gray-700">
+                      Insurance Document
+                    </span>
+                    <span className="ml-auto text-xs text-gray-500">
+                      {user.insurance_verified ? "Verified" : "Pending"}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                    <div
+                      className={`w-5 h-5 rounded-full flex items-center justify-center ${
+                        user.bank_name ? "bg-green-100" : "bg-yellow-100"
+                      }`}
+                    >
+                      {user.bank_name ? (
+                        <CheckCircle className="w-4 h-4 text-green-600" />
+                      ) : (
+                        <Clock className="w-4 h-4 text-yellow-600" />
+                      )}
+                    </div>
+                    <span className="text-sm text-gray-700">
+                      Bank Account Information
+                    </span>
+                    <span className="ml-auto text-xs text-gray-500">
+                      {user.bank_name ? "Provided" : "Missing"}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                    <div
+                      className={`w-5 h-5 rounded-full flex items-center justify-center ${
+                        user.skills && user.skills.length > 0
+                          ? "bg-green-100"
+                          : "bg-yellow-100"
+                      }`}
+                    >
+                      {user.skills && user.skills.length > 0 ? (
+                        <CheckCircle className="w-4 h-4 text-green-600" />
+                      ) : (
+                        <Clock className="w-4 h-4 text-yellow-600" />
+                      )}
+                    </div>
+                    <span className="text-sm text-gray-700">
+                      Skills & Experience
+                    </span>
+                    <span className="ml-auto text-xs text-gray-500">
+                      {user.skills?.length || 0} skills
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                    <div
+                      className={`w-5 h-5 rounded-full flex items-center justify-center ${
+                        user.job_title ? "bg-green-100" : "bg-yellow-100"
+                      }`}
+                    >
+                      {user.job_title ? (
+                        <CheckCircle className="w-4 h-4 text-green-600" />
+                      ) : (
+                        <Clock className="w-4 h-4 text-yellow-600" />
+                      )}
+                    </div>
+                    <span className="text-sm text-gray-700">
+                      Professional Profile
+                    </span>
+                    <span className="ml-auto text-xs text-gray-500">
+                      {user.job_title || "Incomplete"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3">
+                {!user.business_verified ? (
+                  <button
+                    onClick={() => setShowVerificationModal(true)}
+                    disabled={verificationLoading}
+                    className="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {verificationLoading ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                        Processing...
+                      </>
+                    ) : (
+                      <>
+                        <BadgeCheck className="w-5 h-5" />
+                        Verify Worker
+                      </>
+                    )}
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleUnverifyWorker}
+                    disabled={verificationLoading}
+                    className="flex-1 px-6 py-3 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {verificationLoading ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                        Processing...
+                      </>
+                    ) : (
+                      <>
+                        <RotateCcw className="w-5 h-5" />
+                        Remove Verification
+                      </>
+                    )}
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -833,10 +1274,15 @@ export default function AdminUserDetailPage() {
                         <p className="text-xs text-gray-500">
                           {formatDate(job.created_at)}
                         </p>
+                        {job.pay_type && (
+                          <p className="text-xs text-gray-400 mt-1">
+                            {job.pay_type}
+                          </p>
+                        )}
                       </div>
                       <div className="flex items-center gap-4">
                         <span className="font-semibold text-gray-900">
-                          ${job.price}
+                          {formatJobPrice(job)}
                         </span>
                         <span
                           className={`px-2 py-1 rounded-full text-xs font-medium ${
@@ -860,6 +1306,63 @@ export default function AdminUserDetailPage() {
           )}
         </div>
       </div>
+
+      {/* Verification Modal */}
+      {showVerificationModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6">
+            <h3 className="text-xl font-bold text-gray-900 mb-2">
+              Verify Worker
+            </h3>
+            <p className="text-sm text-gray-500 mb-6">
+              Are you sure you want to verify this worker? This action will mark
+              them as a verified professional.
+            </p>
+
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Verification Notes (Optional)
+              </label>
+              <textarea
+                value={verificationNotes}
+                onChange={(e) => setVerificationNotes(e.target.value)}
+                placeholder="Add any notes about this verification..."
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                rows={3}
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowVerificationModal(false);
+                  setVerificationNotes("");
+                }}
+                className="flex-1 px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleVerifyWorker}
+                disabled={verificationLoading}
+                className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {verificationLoading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                    Verifying...
+                  </>
+                ) : (
+                  <>
+                    <BadgeCheck className="w-4 h-4" />
+                    Verify
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

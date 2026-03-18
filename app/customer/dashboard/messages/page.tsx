@@ -65,7 +65,6 @@ export default function MessagesPage() {
         } md:flex w-full md:w-80 lg:w-96 flex-col border-r border-gray-200 bg-white absolute md:relative z-10 h-full`}
       >
         {" "}
-        ss
         <div className="p-4 border-b border-gray-200">
           <h1 className="text-xl font-semibold text-gray-900">
             Messages(Asigned Workers)

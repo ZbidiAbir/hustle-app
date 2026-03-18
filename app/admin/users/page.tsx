@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -12,7 +12,6 @@ import {
   Eye,
   Edit,
   Trash2,
-  Ban,
   CheckCircle,
   XCircle,
   Mail,
@@ -23,11 +22,26 @@ import {
   Briefcase,
   Download,
   RefreshCw,
-  UserPlus,
   Shield,
   AlertTriangle,
   ChevronLeft,
   ChevronRight,
+  Clock,
+  DollarSign,
+  Award,
+  Building,
+  Globe,
+  CreditCard,
+  FileText,
+  Camera,
+  Lock,
+  Unlock,
+  UserCheck,
+  UserX,
+  BarChart,
+  TrendingUp,
+  PieChart,
+  Activity,
 } from "lucide-react";
 
 type User = {
@@ -38,12 +52,68 @@ type User = {
   avatar_url: string | null;
   phone: string | null;
   created_at: string;
+  updated_at?: string;
+  // Informations personnelles
+  address?: string | null;
+  city?: string | null;
+  country?: string | null;
+  zip_code?: string | null;
+  job_title?: string | null;
+  // Informations professionnelles (workers)
+  company_name?: string | null;
+  company_logo_url?: string | null;
+  company_phone?: string | null;
+  company_email?: string | null;
+  business_address?: string | null;
+  business_city?: string | null;
+  business_country?: string | null;
+  business_zip_code?: string | null;
+  business_website?: string | null;
+  business_description?: string | null;
+  business_registration_number?: string | null;
+  business_employees_count?: string | null;
+  business_year_founded?: number | null;
+  trade_category?: string | null;
+  skills?: string[] | null;
+  level?: string | null;
+  hourly_rate?: number | null;
+  rate_type?: string | null;
+  // Vérifications et statuts
+  business_verified?: boolean;
+  insurance_verified?: boolean;
+  insurance_url?: string | null;
+  loyalty_points?: number;
+  // Informations de paiement
+  payment_method?: string | null;
+  bank_name?: string | null;
+  bank_account_holder?: string | null;
+  bank_account_number?: string | null;
+  bank_routing_number?: string | null;
+  card_last_four?: string | null;
+  card_expiry_date?: string | null;
+  card_holder_name?: string | null;
+  // Métadonnées
+  metadata?: any;
 };
 
 type UserWithStats = User & {
   jobs_completed?: number;
   jobs_posted?: number;
+  jobs_in_progress?: number;
+  total_earnings?: number;
+  total_spent?: number;
   rating?: number;
+  reviews_count?: number;
+  reports_count?: number;
+  last_active?: string;
+  account_status: "active" | "suspended" | "pending";
+};
+
+type FilterOptions = {
+  role: string;
+  status: string;
+  verification: string;
+  dateRange: string;
 };
 
 export default function AdminUsersPage() {
@@ -51,7 +121,12 @@ export default function AdminUsersPage() {
   const [filteredUsers, setFilteredUsers] = useState<UserWithStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-  const [roleFilter, setRoleFilter] = useState<string>("all");
+  const [filters, setFilters] = useState<FilterOptions>({
+    role: "all",
+    status: "all",
+    verification: "all",
+    dateRange: "all",
+  });
   const [showFilters, setShowFilters] = useState(false);
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   const [selectAll, setSelectAll] = useState(false);
@@ -62,7 +137,17 @@ export default function AdminUsersPage() {
     customers: 0,
     workers: 0,
     admins: 0,
+    active: 0,
+    suspended: 0,
+    pending: 0,
+    verified: 0,
+    unverified: 0,
   });
+  const [sortConfig, setSortConfig] = useState<{
+    key: string;
+    direction: "asc" | "desc";
+  }>({ key: "created_at", direction: "desc" });
+
   const router = useRouter();
 
   useEffect(() => {
@@ -71,7 +156,7 @@ export default function AdminUsersPage() {
 
   useEffect(() => {
     filterUsers();
-  }, [users, searchTerm, roleFilter]);
+  }, [users, searchTerm, filters, sortConfig]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -81,7 +166,7 @@ export default function AdminUsersPage() {
     try {
       setLoading(true);
 
-      // Récupérer tous les profils
+      // Récupérer tous les profils avec TOUS les champs
       const { data: profiles, error } = await supabase
         .from("profiles")
         .select("*")
@@ -91,12 +176,7 @@ export default function AdminUsersPage() {
 
       if (!profiles) {
         setUsers([]);
-        setStats({
-          total: 0,
-          customers: 0,
-          workers: 0,
-          admins: 0,
-        });
+        updateStats([]);
         return;
       }
 
@@ -104,50 +184,97 @@ export default function AdminUsersPage() {
       const usersWithStats = await Promise.all(
         profiles.map(async (user) => {
           let jobsCompleted = 0;
+          let jobsInProgress = 0;
           let jobsPosted = 0;
+          let totalEarnings = 0;
+          let totalSpent = 0;
           let rating = 0;
+          let reviewsCount = 0;
+          let reportsCount = 0;
 
           if (user.role === "worker") {
-            // Compter les jobs complétés pour ce worker
+            // Jobs complétés
             const { count: completedCount } = await supabase
               .from("jobs")
               .select("*", { count: "exact", head: true })
               .eq("worker_id", user.id)
               .eq("status", "completed");
-
             jobsCompleted = completedCount || 0;
 
-            // Calculer la note moyenne (si tu as une table reviews)
-            // À adapter selon ta structure
-            rating = 4.5; // Valeur par défaut si pas de reviews
+            // Jobs en cours
+            const { count: inProgressCount } = await supabase
+              .from("jobs")
+              .select("*", { count: "exact", head: true })
+              .eq("worker_id", user.id)
+              .in("status", ["in_progress", "assigned"]);
+            jobsInProgress = inProgressCount || 0;
+
+            // Total des gains (à adapter selon ta structure)
+            const { data: completedJobs } = await supabase
+              .from("jobs")
+              .select("price")
+              .eq("worker_id", user.id)
+              .eq("status", "completed");
+            totalEarnings =
+              completedJobs?.reduce((sum, job) => sum + (job.price || 0), 0) ||
+              0;
+
+            // Notes et avis
+            const { data: reviews } = await supabase
+              .from("reviews")
+              .select("rating")
+              .eq("worker_id", user.id);
+            if (reviews && reviews.length > 0) {
+              rating =
+                reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
+              reviewsCount = reviews.length;
+            }
           } else if (user.role === "customer") {
-            // Compter les jobs postés par ce client
+            // Jobs postés
             const { count: postedCount } = await supabase
               .from("jobs")
               .select("*", { count: "exact", head: true })
               .eq("customer_id", user.id);
-
             jobsPosted = postedCount || 0;
+
+            // Total dépensé
+            const { data: paidJobs } = await supabase
+              .from("jobs")
+              .select("price")
+              .eq("customer_id", user.id)
+              .eq("status", "completed");
+            totalSpent =
+              paidJobs?.reduce((sum, job) => sum + (job.price || 0), 0) || 0;
           }
+
+          // Vérifier les signalements
+          const { count: reports } = await supabase
+            .from("reports")
+            .select("*", { count: "exact", head: true })
+            .eq("reported_user_id", user.id);
+          reportsCount = reports || 0;
+
+          // Déterminer le statut du compte (à adapter selon ta logique)
+          const accountStatus = determineAccountStatus(user);
 
           return {
             ...user,
             jobs_completed: jobsCompleted,
+            jobs_in_progress: jobsInProgress,
             jobs_posted: jobsPosted,
+            total_earnings: totalEarnings,
+            total_spent: totalSpent,
             rating: rating,
+            reviews_count: reviewsCount,
+            reports_count: reportsCount,
+            account_status: accountStatus,
+            last_active: user.updated_at || user.created_at,
           };
         })
       );
 
       setUsers(usersWithStats);
-
-      // Calculer les statistiques
-      setStats({
-        total: usersWithStats.length,
-        customers: usersWithStats.filter((u) => u.role === "customer").length,
-        workers: usersWithStats.filter((u) => u.role === "worker").length,
-        admins: usersWithStats.filter((u) => u.role === "admin").length,
-      });
+      updateStats(usersWithStats);
     } catch (error) {
       console.error("Error fetching users:", error);
     } finally {
@@ -155,24 +282,142 @@ export default function AdminUsersPage() {
     }
   };
 
+  const determineAccountStatus = (
+    user: User
+  ): "active" | "suspended" | "pending" => {
+    // Logique personnalisée pour déterminer le statut
+    // Par exemple, basé sur les métadonnées ou une colonne spécifique
+    if (user.metadata?.suspended) return "suspended";
+    if (user.metadata?.pending_verification) return "pending";
+    return "active";
+  };
+
+  const updateStats = (usersData: UserWithStats[]) => {
+    setStats({
+      total: usersData.length,
+      customers: usersData.filter((u) => u.role === "customer").length,
+      workers: usersData.filter((u) => u.role === "worker").length,
+      admins: usersData.filter((u) => u.role === "admin").length,
+      active: usersData.filter((u) => u.account_status === "active").length,
+      suspended: usersData.filter((u) => u.account_status === "suspended")
+        .length,
+      pending: usersData.filter((u) => u.account_status === "pending").length,
+      verified: usersData.filter(
+        (u) => u.business_verified || u.insurance_verified
+      ).length,
+      unverified: usersData.filter(
+        (u) => !u.business_verified && !u.insurance_verified
+      ).length,
+    });
+  };
+
   const filterUsers = () => {
     let filtered = [...users];
 
+    // Recherche textuelle
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(
         (user) =>
           user.full_name?.toLowerCase().includes(term) ||
           user.email?.toLowerCase().includes(term) ||
-          user.phone?.toLowerCase().includes(term)
+          user.phone?.toLowerCase().includes(term) ||
+          user.company_name?.toLowerCase().includes(term) ||
+          user.company_email?.toLowerCase().includes(term) ||
+          user.city?.toLowerCase().includes(term) ||
+          user.business_city?.toLowerCase().includes(term) ||
+          user.trade_category?.toLowerCase().includes(term) ||
+          user.skills?.some((skill) => skill.toLowerCase().includes(term))
       );
     }
 
-    if (roleFilter !== "all") {
-      filtered = filtered.filter((user) => user.role === roleFilter);
+    // Filtre par rôle
+    if (filters.role !== "all") {
+      filtered = filtered.filter((user) => user.role === filters.role);
     }
 
+    // Filtre par statut
+    if (filters.status !== "all") {
+      filtered = filtered.filter(
+        (user) => user.account_status === filters.status
+      );
+    }
+
+    // Filtre par vérification
+    if (filters.verification === "verified") {
+      filtered = filtered.filter(
+        (user) => user.business_verified || user.insurance_verified
+      );
+    } else if (filters.verification === "unverified") {
+      filtered = filtered.filter(
+        (user) => !user.business_verified && !user.insurance_verified
+      );
+    }
+
+    // Filtre par date
+    if (filters.dateRange !== "all") {
+      const now = new Date();
+      const filterDate = new Date();
+
+      switch (filters.dateRange) {
+        case "today":
+          filterDate.setHours(0, 0, 0, 0);
+          filtered = filtered.filter(
+            (user) => new Date(user.created_at) >= filterDate
+          );
+          break;
+        case "week":
+          filterDate.setDate(now.getDate() - 7);
+          filtered = filtered.filter(
+            (user) => new Date(user.created_at) >= filterDate
+          );
+          break;
+        case "month":
+          filterDate.setMonth(now.getMonth() - 1);
+          filtered = filtered.filter(
+            (user) => new Date(user.created_at) >= filterDate
+          );
+          break;
+        case "year":
+          filterDate.setFullYear(now.getFullYear() - 1);
+          filtered = filtered.filter(
+            (user) => new Date(user.created_at) >= filterDate
+          );
+          break;
+      }
+    }
+
+    // Tri
+    filtered.sort((a, b) => {
+      let aValue = a[sortConfig.key as keyof UserWithStats];
+      let bValue = b[sortConfig.key as keyof UserWithStats];
+
+      if (sortConfig.key === "full_name") {
+        aValue = a.full_name || "";
+        bValue = b.full_name || "";
+      }
+
+      if (typeof aValue === "string" && typeof bValue === "string") {
+        return sortConfig.direction === "asc"
+          ? aValue.localeCompare(bValue)
+          : bValue.localeCompare(aValue);
+      }
+
+      // Pour les nombres
+      const aNum = Number(aValue) || 0;
+      const bNum = Number(bValue) || 0;
+
+      return sortConfig.direction === "asc" ? aNum - bNum : bNum - aNum;
+    });
+
     setFilteredUsers(filtered);
+  };
+
+  const handleSort = (key: string) => {
+    setSortConfig((prev) => ({
+      key,
+      direction: prev.key === key && prev.direction === "asc" ? "desc" : "asc",
+    }));
   };
 
   const handleSelectAll = () => {
@@ -196,12 +441,57 @@ export default function AdminUsersPage() {
   const handleStatusChange = async (userId: string, action: string) => {
     try {
       if (action === "delete") {
-        // Note: La suppression directe d'un utilisateur n'est pas recommandée
-        // Il vaut mieux désactiver le compte ou utiliser une fonction Edge
+        if (
+          !confirm(
+            "Are you sure you want to delete this user? This action cannot be undone."
+          )
+        ) {
+          return;
+        }
+        // Implémenter la logique de suppression (ou désactivation)
+        // Note: Il est préférable d'utiliser une fonction Edge Supabase pour ça
         alert(
           "User deletion requires admin privileges. Please use the Supabase dashboard."
         );
         return;
+      }
+
+      if (action === "suspend") {
+        // Mettre à jour le statut de l'utilisateur
+        const { error } = await supabase
+          .from("profiles")
+          .update({
+            metadata: {
+              ...users.find((u) => u.id === userId)?.metadata,
+              suspended: true,
+            },
+          })
+          .eq("id", userId);
+
+        if (error) throw error;
+      }
+
+      if (action === "activate") {
+        const { error } = await supabase
+          .from("profiles")
+          .update({
+            metadata: {
+              ...users.find((u) => u.id === userId)?.metadata,
+              suspended: false,
+            },
+          })
+          .eq("id", userId);
+
+        if (error) throw error;
+      }
+
+      if (action === "verify") {
+        const { error } = await supabase
+          .from("profiles")
+          .update({ business_verified: true })
+          .eq("id", userId);
+
+        if (error) throw error;
       }
 
       // Rafraîchir la liste
@@ -210,6 +500,7 @@ export default function AdminUsersPage() {
       setSelectAll(false);
     } catch (error) {
       console.error(`Error performing ${action}:`, error);
+      alert(`Error performing ${action}. Please try again.`);
     }
   };
 
@@ -228,10 +519,77 @@ export default function AdminUsersPage() {
     }
   };
 
+  const exportUsers = () => {
+    const data = filteredUsers.map((user) => ({
+      id: user.id,
+      full_name: user.full_name,
+      email: user.email,
+      role: user.role,
+      phone: user.phone,
+      city: user.city || user.business_city,
+      country: user.country || user.business_country,
+      company: user.company_name,
+      trade_category: user.trade_category,
+      skills: user.skills?.join(", "),
+      hourly_rate: user.hourly_rate,
+      business_verified: user.business_verified,
+      insurance_verified: user.insurance_verified,
+      loyalty_points: user.loyalty_points,
+      jobs_completed: user.jobs_completed,
+      jobs_posted: user.jobs_posted,
+      rating: user.rating?.toFixed(1),
+      created_at: new Date(user.created_at).toLocaleDateString(),
+      status: user.account_status,
+    }));
+
+    const csv = convertToCSV(data);
+    downloadCSV(
+      csv,
+      `users_export_${new Date().toISOString().split("T")[0]}.csv`
+    );
+  };
+
+  const convertToCSV = (data: any[]) => {
+    const headers = Object.keys(data[0] || {}).join(",");
+    const rows = data.map((obj) =>
+      Object.values(obj)
+        .map((value) =>
+          typeof value === "string" && value.includes(",")
+            ? `"${value}"`
+            : value
+        )
+        .join(",")
+    );
+    return [headers, ...rows].join("\n");
+  };
+
+  const downloadCSV = (csv: string, filename: string) => {
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
+
   const formatDate = (dateString?: string) => {
     if (!dateString) return "N/A";
     const date = new Date(dateString);
-    return date.toLocaleDateString();
+    return date.toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  };
+
+  const formatCurrency = (amount?: number) => {
+    if (amount === undefined || amount === null) return "N/A";
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      minimumFractionDigits: 0,
+    }).format(amount);
   };
 
   const getInitials = (name: string | null) => {
@@ -265,17 +623,20 @@ export default function AdminUsersPage() {
     currentPage * itemsPerPage
   );
 
-  const StatCard = ({ title, value, icon: Icon, color }: any) => (
+  const StatCard = ({ title, value, icon: Icon, color, trend }: any) => (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 hover:shadow-md transition">
-      <div className="flex items-center gap-3">
-        <div className={`p-3 rounded-lg ${color}`}>
-          <Icon className="w-5 h-5" />
+      <div className="flex items-center justify-between mb-2">
+        <div className={`p-2 rounded-lg ${color}`}>
+          <Icon className="w-4 h-4" />
         </div>
-        <div>
-          <p className="text-sm text-gray-600">{title}</p>
-          <p className="text-2xl font-bold text-gray-900">{value}</p>
-        </div>
+        {trend && (
+          <span className="text-xs text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full">
+            +{trend}%
+          </span>
+        )}
       </div>
+      <p className="text-2xl font-bold text-gray-900">{value}</p>
+      <p className="text-xs text-gray-500 mt-1">{title}</p>
     </div>
   );
 
@@ -295,10 +656,43 @@ export default function AdminUsersPage() {
       {/* Header */}
       <div className="sticky top-0 z-10 bg-white border-b border-gray-200 shadow-sm">
         <div className="px-4 sm:px-6 lg:px-8 py-4">
-          <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Manage all users on the platform
-          </p>
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">
+                User Management
+              </h1>
+              <p className="text-sm text-gray-500 mt-1">
+                Manage all users on the platform
+              </p>
+            </div>
+
+            {/* Bulk Actions */}
+            {selectedUsers.length > 0 && (
+              <div className="flex items-center gap-2 bg-red-50 px-3 py-2 rounded-lg">
+                <span className="text-sm text-red-700 font-medium">
+                  {selectedUsers.length} selected
+                </span>
+                <button
+                  onClick={() => handleBulkAction("verify")}
+                  className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700"
+                >
+                  Verify
+                </button>
+                <button
+                  onClick={() => handleBulkAction("suspend")}
+                  className="px-2 py-1 text-xs bg-amber-600 text-white rounded hover:bg-amber-700"
+                >
+                  Suspend
+                </button>
+                <button
+                  onClick={() => setSelectedUsers([])}
+                  className="p-1 hover:bg-red-100 rounded"
+                >
+                  <XCircle className="w-4 h-4 text-red-600" />
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -306,7 +700,7 @@ export default function AdminUsersPage() {
       <div className="px-4 sm:px-6 lg:px-8 py-6">
         <div className="max-w-7xl mx-auto space-y-6">
           {/* Stats Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             <StatCard
               title="Total Users"
               value={stats.total}
@@ -314,10 +708,17 @@ export default function AdminUsersPage() {
               color="bg-blue-100 text-blue-600"
             />
             <StatCard
-              title="Customers"
-              value={stats.customers}
-              icon={Users}
+              title="Active"
+              value={stats.active}
+              icon={UserCheck}
               color="bg-green-100 text-green-600"
+              trend="8"
+            />
+            <StatCard
+              title="Suspended"
+              value={stats.suspended}
+              icon={UserX}
+              color="bg-red-100 text-red-600"
             />
             <StatCard
               title="Workers"
@@ -326,11 +727,49 @@ export default function AdminUsersPage() {
               color="bg-purple-100 text-purple-600"
             />
             <StatCard
-              title="Admins"
-              value={stats.admins}
-              icon={Shield}
-              color="bg-red-100 text-red-600"
+              title="Customers"
+              value={stats.customers}
+              icon={Users}
+              color="bg-emerald-100 text-emerald-600"
             />
+            <StatCard
+              title="Verified"
+              value={stats.verified}
+              icon={Shield}
+              color="bg-amber-100 text-amber-600"
+            />
+          </div>
+
+          {/* Quick Stats */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="bg-white rounded-lg p-3 border border-gray-200">
+              <p className="text-xs text-gray-500">Total Earnings</p>
+              <p className="text-lg font-bold text-gray-900">
+                {formatCurrency(
+                  users.reduce((sum, u) => sum + (u.total_earnings || 0), 0)
+                )}
+              </p>
+            </div>
+            <div className="bg-white rounded-lg p-3 border border-gray-200">
+              <p className="text-xs text-gray-500">Total Spent</p>
+              <p className="text-lg font-bold text-gray-900">
+                {formatCurrency(
+                  users.reduce((sum, u) => sum + (u.total_spent || 0), 0)
+                )}
+              </p>
+            </div>
+            <div className="bg-white rounded-lg p-3 border border-gray-200">
+              <p className="text-xs text-gray-500">Jobs Completed</p>
+              <p className="text-lg font-bold text-gray-900">
+                {users.reduce((sum, u) => sum + (u.jobs_completed || 0), 0)}
+              </p>
+            </div>
+            <div className="bg-white rounded-lg p-3 border border-gray-200">
+              <p className="text-xs text-gray-500">Active Reports</p>
+              <p className="text-lg font-bold text-red-600">
+                {users.reduce((sum, u) => sum + (u.reports_count || 0), 0)}
+              </p>
+            </div>
           </div>
 
           {/* Search and Filters */}
@@ -340,7 +779,7 @@ export default function AdminUsersPage() {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
                   type="text"
-                  placeholder="Search users by name, email..."
+                  placeholder="Search by name, email, company, skills..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
@@ -350,16 +789,18 @@ export default function AdminUsersPage() {
                 <button
                   onClick={() => setShowFilters(!showFilters)}
                   className={`px-3 py-2 text-sm border rounded-lg flex items-center gap-2 transition ${
-                    showFilters || roleFilter !== "all"
+                    showFilters ||
+                    Object.values(filters).some((v) => v !== "all")
                       ? "bg-red-50 border-red-200 text-red-600"
                       : "border-gray-200 text-gray-600 hover:bg-gray-50"
                   }`}
                 >
                   <Filter className="w-4 h-4" />
                   <span className="hidden sm:inline">Filters</span>
-                  {roleFilter !== "all" && (
+                  {Object.values(filters).filter((v) => v !== "all").length >
+                    0 && (
                     <span className="w-5 h-5 bg-red-600 text-white text-xs rounded-full flex items-center justify-center">
-                      1
+                      {Object.values(filters).filter((v) => v !== "all").length}
                     </span>
                   )}
                 </button>
@@ -370,26 +811,86 @@ export default function AdminUsersPage() {
                 >
                   <RefreshCw className="w-4 h-4 text-gray-600" />
                 </button>
+                <button
+                  onClick={exportUsers}
+                  className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition"
+                  title="Export to CSV"
+                >
+                  <Download className="w-4 h-4 text-gray-600" />
+                </button>
               </div>
             </div>
 
             {/* Advanced Filters */}
             {showFilters && (
               <div className="mt-4 pt-4 border-t border-gray-200">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div>
                     <label className="block text-xs font-medium text-gray-500 mb-1.5">
                       Role
                     </label>
                     <select
-                      value={roleFilter}
-                      onChange={(e) => setRoleFilter(e.target.value)}
+                      value={filters.role}
+                      onChange={(e) =>
+                        setFilters({ ...filters, role: e.target.value })
+                      }
                       className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
                     >
                       <option value="all">All Roles</option>
                       <option value="customer">Customers</option>
                       <option value="worker">Workers</option>
                       <option value="admin">Admins</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1.5">
+                      Status
+                    </label>
+                    <select
+                      value={filters.status}
+                      onChange={(e) =>
+                        setFilters({ ...filters, status: e.target.value })
+                      }
+                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    >
+                      <option value="all">All Status</option>
+                      <option value="active">Active</option>
+                      <option value="suspended">Suspended</option>
+                      <option value="pending">Pending</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1.5">
+                      Verification
+                    </label>
+                    <select
+                      value={filters.verification}
+                      onChange={(e) =>
+                        setFilters({ ...filters, verification: e.target.value })
+                      }
+                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    >
+                      <option value="all">All</option>
+                      <option value="verified">Verified</option>
+                      <option value="unverified">Unverified</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1.5">
+                      Joined
+                    </label>
+                    <select
+                      value={filters.dateRange}
+                      onChange={(e) =>
+                        setFilters({ ...filters, dateRange: e.target.value })
+                      }
+                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    >
+                      <option value="all">All time</option>
+                      <option value="today">Today</option>
+                      <option value="week">Last 7 days</option>
+                      <option value="month">Last 30 days</option>
+                      <option value="year">Last year</option>
                     </select>
                   </div>
                 </div>
@@ -412,17 +913,76 @@ export default function AdminUsersPage() {
                         className="w-4 h-4 text-red-600 rounded border-gray-300 focus:ring-red-500"
                       />
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      User
+                    <th
+                      className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
+                      onClick={() => handleSort("full_name")}
+                    >
+                      <div className="flex items-center gap-1">
+                        User
+                        {sortConfig.key === "full_name" && (
+                          <span>
+                            {sortConfig.direction === "asc" ? "↑" : "↓"}
+                          </span>
+                        )}
+                      </div>
+                    </th>
+                    <th
+                      className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
+                      onClick={() => handleSort("role")}
+                    >
+                      <div className="flex items-center gap-1">
+                        Role
+                        {sortConfig.key === "role" && (
+                          <span>
+                            {sortConfig.direction === "asc" ? "↑" : "↓"}
+                          </span>
+                        )}
+                      </div>
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Role
+                      Contact
+                    </th>
+                    <th
+                      className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
+                      onClick={() => handleSort("jobs_completed")}
+                    >
+                      <div className="flex items-center gap-1">
+                        Stats
+                        {sortConfig.key === "jobs_completed" && (
+                          <span>
+                            {sortConfig.direction === "asc" ? "↑" : "↓"}
+                          </span>
+                        )}
+                      </div>
+                    </th>
+                    <th
+                      className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
+                      onClick={() => handleSort("rating")}
+                    >
+                      <div className="flex items-center gap-1">
+                        Rating
+                        {sortConfig.key === "rating" && (
+                          <span>
+                            {sortConfig.direction === "asc" ? "↑" : "↓"}
+                          </span>
+                        )}
+                      </div>
+                    </th>
+                    <th
+                      className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
+                      onClick={() => handleSort("created_at")}
+                    >
+                      <div className="flex items-center gap-1">
+                        Joined
+                        {sortConfig.key === "created_at" && (
+                          <span>
+                            {sortConfig.direction === "asc" ? "↑" : "↓"}
+                          </span>
+                        )}
+                      </div>
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Stats
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Joined
+                      Status
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Actions
@@ -445,7 +1005,7 @@ export default function AdminUsersPage() {
                           <div
                             className={`w-10 h-10 rounded-full ${getAvatarColor(
                               user.id
-                            )} flex items-center justify-center text-white font-semibold text-sm`}
+                            )} flex items-center justify-center text-white font-semibold text-sm flex-shrink-0`}
                           >
                             {user.avatar_url ? (
                               <img
@@ -457,57 +1017,150 @@ export default function AdminUsersPage() {
                               getInitials(user.full_name)
                             )}
                           </div>
-                          <div>
-                            <p className="font-medium text-gray-900">
+                          <div className="min-w-0">
+                            <p className="font-medium text-gray-900 truncate">
                               {user.full_name || "No name"}
                             </p>
-                            <p className="text-xs text-gray-500">
+                            <p className="text-xs text-gray-500 truncate">
                               {user.email}
                             </p>
-                            {user.phone && (
+                            {user.company_name && (
                               <p className="text-xs text-gray-400 flex items-center gap-1 mt-1">
-                                <Phone className="w-3 h-3" />
-                                {user.phone}
+                                <Building className="w-3 h-3" />
+                                {user.company_name}
                               </p>
                             )}
                           </div>
                         </div>
                       </td>
                       <td className="px-4 py-3">
-                        <span
-                          className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            user.role === "admin"
-                              ? "bg-red-100 text-red-800"
-                              : user.role === "worker"
-                              ? "bg-purple-100 text-purple-800"
-                              : "bg-green-100 text-green-800"
-                          }`}
-                        >
-                          {user.role}
-                        </span>
+                        <div className="flex flex-col gap-1">
+                          <span
+                            className={`px-2 py-1 rounded-full text-xs font-medium inline-block w-fit ${
+                              user.role === "admin"
+                                ? "bg-red-100 text-red-800"
+                                : user.role === "worker"
+                                ? "bg-purple-100 text-purple-800"
+                                : "bg-green-100 text-green-800"
+                            }`}
+                          >
+                            {user.role}
+                          </span>
+                          {user.trade_category && (
+                            <span className="text-xs text-gray-500">
+                              {user.trade_category}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="space-y-1">
+                          {user.phone && (
+                            <p className="text-xs text-gray-600 flex items-center gap-1">
+                              <Phone className="w-3 h-3" />
+                              {user.phone}
+                            </p>
+                          )}
+                          {user.city && (
+                            <p className="text-xs text-gray-600 flex items-center gap-1">
+                              <MapPin className="w-3 h-3" />
+                              {user.city}
+                            </p>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3">
                         {user.role === "worker" && (
-                          <div className="text-sm">
-                            <span className="font-medium">
-                              {user.jobs_completed || 0}
-                            </span>
-                            <span className="text-gray-500 ml-1">jobs</span>
+                          <div className="space-y-1">
+                            <p className="text-sm">
+                              <span className="font-medium">
+                                {user.jobs_completed || 0}
+                              </span>
+                              <span className="text-gray-500 ml-1">jobs</span>
+                            </p>
+                            {user.hourly_rate && (
+                              <p className="text-xs text-gray-600">
+                                ${user.hourly_rate}/{user.rate_type || "hr"}
+                              </p>
+                            )}
+                            {user.total_earnings ? (
+                              <p className="text-xs text-green-600 font-medium">
+                                Earned: {formatCurrency(user.total_earnings)}
+                              </p>
+                            ) : null}
                           </div>
                         )}
                         {user.role === "customer" && (
-                          <div className="text-sm">
-                            <span className="font-medium">
-                              {user.jobs_posted || 0}
-                            </span>
-                            <span className="text-gray-500 ml-1">
-                              jobs posted
-                            </span>
+                          <div className="space-y-1">
+                            <p className="text-sm">
+                              <span className="font-medium">
+                                {user.jobs_posted || 0}
+                              </span>
+                              <span className="text-gray-500 ml-1">posted</span>
+                            </p>
+                            {user.total_spent ? (
+                              <p className="text-xs text-blue-600 font-medium">
+                                Spent: {formatCurrency(user.total_spent)}
+                              </p>
+                            ) : null}
                           </div>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-600">
-                        {formatDate(user.created_at)}
+                      <td className="px-4 py-3">
+                        {user.role === "worker" ? (
+                          <div className="flex items-center gap-1">
+                            <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
+                            <span className="font-medium">
+                              {user.rating?.toFixed(1) || "0.0"}
+                            </span>
+                            <span className="text-xs text-gray-500">
+                              ({user.reviews_count || 0})
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="space-y-1">
+                          <p className="text-sm text-gray-600">
+                            {formatDate(user.created_at)}
+                          </p>
+                          {user.last_active && (
+                            <p className="text-xs text-gray-400 flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              Last active: {formatDate(user.last_active)}
+                            </p>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-col gap-1">
+                          <span
+                            className={`px-2 py-1 rounded-full text-xs font-medium inline-block w-fit ${
+                              user.account_status === "active"
+                                ? "bg-green-100 text-green-800"
+                                : user.account_status === "suspended"
+                                ? "bg-red-100 text-red-800"
+                                : "bg-amber-100 text-amber-800"
+                            }`}
+                          >
+                            {user.account_status}
+                          </span>
+                          {user.reports_count ? (
+                            <span className="text-xs text-red-600 flex items-center gap-1">
+                              <AlertTriangle className="w-3 h-3" />
+                              {user.reports_count} reports
+                            </span>
+                          ) : null}
+                          {(user.business_verified ||
+                            user.insurance_verified) && (
+                            <span className="text-xs text-green-600 flex items-center gap-1">
+                              <Shield className="w-3 h-3" />
+                              Verified
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
@@ -522,7 +1175,7 @@ export default function AdminUsersPage() {
                             <button className="p-1 hover:bg-gray-100 rounded-lg transition">
                               <MoreHorizontal className="w-4 h-4 text-gray-600" />
                             </button>
-                            <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-xl border hidden group-hover:block z-10">
+                            <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-xl border hidden group-hover:block z-20">
                               <div className="py-1">
                                 <Link
                                   href={`/admin/users/${user.id}/edit`}
@@ -531,6 +1184,43 @@ export default function AdminUsersPage() {
                                   <Edit className="w-4 h-4 inline mr-2" />
                                   Edit User
                                 </Link>
+
+                                {user.account_status === "active" ? (
+                                  <button
+                                    onClick={() =>
+                                      handleStatusChange(user.id, "suspend")
+                                    }
+                                    className="w-full text-left px-4 py-2 text-sm text-amber-600 hover:bg-amber-50"
+                                  >
+                                    <Lock className="w-4 h-4 inline mr-2" />
+                                    Suspend Account
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() =>
+                                      handleStatusChange(user.id, "activate")
+                                    }
+                                    className="w-full text-left px-4 py-2 text-sm text-green-600 hover:bg-green-50"
+                                  >
+                                    <Unlock className="w-4 h-4 inline mr-2" />
+                                    Activate Account
+                                  </button>
+                                )}
+
+                                {!user.business_verified && (
+                                  <button
+                                    onClick={() =>
+                                      handleStatusChange(user.id, "verify")
+                                    }
+                                    className="w-full text-left px-4 py-2 text-sm text-blue-600 hover:bg-blue-50"
+                                  >
+                                    <CheckCircle className="w-4 h-4 inline mr-2" />
+                                    Verify Business
+                                  </button>
+                                )}
+
+                                <hr className="my-1 border-gray-200" />
+
                                 <button
                                   onClick={() =>
                                     handleStatusChange(user.id, "delete")
@@ -566,7 +1256,7 @@ export default function AdminUsersPage() {
                       <div
                         className={`w-10 h-10 rounded-full ${getAvatarColor(
                           user.id
-                        )} flex items-center justify-center text-white font-semibold text-sm`}
+                        )} flex items-center justify-center text-white font-semibold text-sm flex-shrink-0`}
                       >
                         {user.avatar_url ? (
                           <img
@@ -585,52 +1275,147 @@ export default function AdminUsersPage() {
                         <p className="text-xs text-gray-500">{user.email}</p>
                       </div>
                     </div>
-                    <span
-                      className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        user.role === "admin"
-                          ? "bg-red-100 text-red-800"
-                          : user.role === "worker"
-                          ? "bg-purple-100 text-purple-800"
-                          : "bg-green-100 text-green-800"
-                      }`}
-                    >
-                      {user.role}
-                    </span>
+                    <div className="flex flex-col items-end gap-1">
+                      <span
+                        className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          user.role === "admin"
+                            ? "bg-red-100 text-red-800"
+                            : user.role === "worker"
+                            ? "bg-purple-100 text-purple-800"
+                            : "bg-green-100 text-green-800"
+                        }`}
+                      >
+                        {user.role}
+                      </span>
+                      <span
+                        className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          user.account_status === "active"
+                            ? "bg-green-100 text-green-800"
+                            : user.account_status === "suspended"
+                            ? "bg-red-100 text-red-800"
+                            : "bg-amber-100 text-amber-800"
+                        }`}
+                      >
+                        {user.account_status}
+                      </span>
+                    </div>
                   </div>
 
-                  <div className="ml-13 space-y-2">
+                  <div className="ml-14 space-y-3">
+                    {/* Contact Info */}
                     <div className="grid grid-cols-2 gap-2 text-sm">
-                      <div>
-                        <span className="text-xs text-gray-500 block">
-                          Joined
-                        </span>
-                        <span className="text-sm text-gray-900">
-                          {formatDate(user.created_at)}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-xs text-gray-500 block">
-                          Stats
-                        </span>
-                        {user.role === "worker" && (
-                          <span className="text-sm text-gray-900">
-                            {user.jobs_completed || 0} jobs
+                      {user.phone && (
+                        <div>
+                          <span className="text-xs text-gray-500 block">
+                            Phone
                           </span>
-                        )}
-                        {user.role === "customer" && (
-                          <span className="text-sm text-gray-900">
-                            {user.jobs_posted || 0} posted
+                          <span className="text-xs text-gray-900 flex items-center gap-1">
+                            <Phone className="w-3 h-3" />
+                            {user.phone}
                           </span>
-                        )}
-                      </div>
+                        </div>
+                      )}
+                      {user.city && (
+                        <div>
+                          <span className="text-xs text-gray-500 block">
+                            Location
+                          </span>
+                          <span className="text-xs text-gray-900 flex items-center gap-1">
+                            <MapPin className="w-3 h-3" />
+                            {user.city}
+                          </span>
+                        </div>
+                      )}
                     </div>
 
+                    {/* Stats */}
+                    <div className="grid grid-cols-2 gap-2 bg-gray-50 p-2 rounded-lg">
+                      {user.role === "worker" ? (
+                        <>
+                          <div>
+                            <span className="text-xs text-gray-500 block">
+                              Jobs
+                            </span>
+                            <span className="text-sm font-medium">
+                              {user.jobs_completed || 0}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-xs text-gray-500 block">
+                              Rating
+                            </span>
+                            <span className="text-sm font-medium flex items-center gap-1">
+                              <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
+                              {user.rating?.toFixed(1) || "0.0"}
+                            </span>
+                          </div>
+                          {user.hourly_rate && (
+                            <div className="col-span-2">
+                              <span className="text-xs text-gray-500 block">
+                                Rate
+                              </span>
+                              <span className="text-sm font-medium">
+                                ${user.hourly_rate}/{user.rate_type || "hr"}
+                              </span>
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <div>
+                            <span className="text-xs text-gray-500 block">
+                              Jobs Posted
+                            </span>
+                            <span className="text-sm font-medium">
+                              {user.jobs_posted || 0}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-xs text-gray-500 block">
+                              Spent
+                            </span>
+                            <span className="text-sm font-medium">
+                              {formatCurrency(user.total_spent)}
+                            </span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Company Info (if any) */}
+                    {user.company_name && (
+                      <div className="text-xs text-gray-600">
+                        <p className="font-medium">{user.company_name}</p>
+                        {user.trade_category && (
+                          <p className="text-gray-500">{user.trade_category}</p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Date */}
+                    <div className="flex items-center justify-between text-xs text-gray-400">
+                      <span>Joined {formatDate(user.created_at)}</span>
+                      {user.reports_count ? (
+                        <span className="text-red-600 flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3" />
+                          {user.reports_count} reports
+                        </span>
+                      ) : null}
+                    </div>
+
+                    {/* Actions */}
                     <div className="flex items-center gap-2 pt-2">
                       <Link
                         href={`/admin/users/${user.id}`}
                         className="flex-1 px-3 py-2 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700 transition text-center"
                       >
                         View Details
+                      </Link>
+                      <Link
+                        href={`/admin/users/${user.id}/edit`}
+                        className="px-3 py-2 border border-gray-200 text-gray-700 text-xs rounded-lg hover:bg-gray-50 transition"
+                      >
+                        Edit
                       </Link>
                     </div>
                   </div>
@@ -646,10 +1431,27 @@ export default function AdminUsersPage() {
                   No users found
                 </h3>
                 <p className="text-sm text-gray-500">
-                  {searchTerm || roleFilter !== "all"
+                  {searchTerm || Object.values(filters).some((v) => v !== "all")
                     ? "Try adjusting your filters"
                     : "No users have been created yet"}
                 </p>
+                {(searchTerm ||
+                  Object.values(filters).some((v) => v !== "all")) && (
+                  <button
+                    onClick={() => {
+                      setSearchTerm("");
+                      setFilters({
+                        role: "all",
+                        status: "all",
+                        verification: "all",
+                        dateRange: "all",
+                      });
+                    }}
+                    className="mt-4 text-sm text-red-600 hover:text-red-700 font-medium"
+                  >
+                    Clear all filters
+                  </button>
+                )}
               </div>
             )}
 

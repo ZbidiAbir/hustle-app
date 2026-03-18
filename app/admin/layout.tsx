@@ -21,6 +21,7 @@ import {
   Shield,
   AlertTriangle,
   CheckCircle,
+  MessageSquare,
 } from "lucide-react";
 
 type User = {
@@ -125,6 +126,13 @@ export default function AdminLayout({
       href: "/admin/jobs",
       icon: Briefcase,
       current: pathname === "/admin/jobs",
+      badge: stats.pendingJobs,
+    },
+    {
+      name: "Conversations",
+      href: "/admin/convs",
+      icon: MessageSquare,
+      current: pathname === "/admin/convs",
       badge: stats.pendingJobs,
     },
     {
