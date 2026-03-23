@@ -68,10 +68,18 @@ type Application = {
   worker?: Profile;
 };
 
+type Conversation = {
+  worker: Profile;
+  lastMessage: string;
+  lastMessageTime: string;
+  unreadCount: number;
+};
+
 export default function JobDetailPage() {
   const [job, setJob] = useState<Job | null>(null);
   const [applications, setApplications] = useState<Application[]>([]);
   const [assignedWorker, setAssignedWorker] = useState<Profile | null>(null);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<
     "details" | "applications" | "messages"
@@ -109,6 +117,8 @@ export default function JobDetailPage() {
 
       if (appsError) throw appsError;
 
+      let workersList: Profile[] = [];
+
       if (appsData && appsData.length > 0) {
         // 3. Récupérer les profils des workers
         const workerIds = appsData.map((app) => app.worker_id);
@@ -134,6 +144,11 @@ export default function JobDetailPage() {
         }));
 
         setApplications(appsWithWorkers);
+
+        // Collecter tous les workers uniques
+        workersList = appsWithWorkers
+          .map((app) => app.worker)
+          .filter((w): w is Profile => w !== undefined);
       }
 
       // 4. Si un worker est assigné, récupérer ses détails
@@ -146,12 +161,86 @@ export default function JobDetailPage() {
 
         if (!workerError && workerData) {
           setAssignedWorker(workerData);
+
+          // S'assurer que le worker assigné est dans la liste des workers
+          if (!workersList.some((w) => w.id === workerData.id)) {
+            workersList.push(workerData);
+          }
         }
       }
+
+      // 5. Récupérer les conversations pour chaque worker
+      await fetchConversations(workersList);
     } catch (error) {
       console.error("Error fetching job details:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchConversations = async (workers: Profile[]) => {
+    try {
+      // Récupérer l'utilisateur courant
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) return;
+
+      const conversationsList: Conversation[] = [];
+
+      for (const worker of workers) {
+        // Récupérer le dernier message entre le customer et ce worker
+        const { data: messages, error } = await supabase
+          .from("messages")
+          .select("*")
+          .eq("job_id", jobId)
+          .or(`sender_id.eq.${user.id},sender_id.eq.${worker.id}`)
+          .order("created_at", { ascending: false })
+          .limit(1);
+
+        if (!error && messages && messages.length > 0) {
+          const lastMessage = messages[0];
+
+          // Compter les messages non lus (si implémenté)
+          const { count: unreadCount } = await supabase
+            .from("messages")
+            .select("*", { count: "exact", head: true })
+            .eq("job_id", jobId)
+            .eq("sender_id", worker.id)
+            .eq("read", false)
+            .neq("sender_id", user.id);
+
+          conversationsList.push({
+            worker,
+            lastMessage: lastMessage.content,
+            lastMessageTime: lastMessage.created_at,
+            unreadCount: unreadCount || 0,
+          });
+        } else {
+          // Si pas de messages, ajouter quand même le worker avec un statut "No messages"
+          conversationsList.push({
+            worker,
+            lastMessage: "No messages yet",
+            lastMessageTime: "",
+            unreadCount: 0,
+          });
+        }
+      }
+
+      // Trier par date du dernier message (les plus récents en premier)
+      conversationsList.sort((a, b) => {
+        if (!a.lastMessageTime) return 1;
+        if (!b.lastMessageTime) return -1;
+        return (
+          new Date(b.lastMessageTime).getTime() -
+          new Date(a.lastMessageTime).getTime()
+        );
+      });
+
+      setConversations(conversationsList);
+    } catch (error) {
+      console.error("Error fetching conversations:", error);
     }
   };
 
@@ -222,9 +311,8 @@ export default function JobDetailPage() {
           <img
             src={profile.avatar_url}
             alt={profile.full_name}
-            className="object-cover"
+            className="w-full h-full object-cover"
             onError={() => setImageError(true)}
-            sizes={size === "sm" ? "32px" : size === "md" ? "48px" : "64px"}
           />
         </div>
       );
@@ -349,6 +437,27 @@ export default function JobDetailPage() {
     });
   };
 
+  const formatMessageTime = (dateString: string) => {
+    if (!dateString) return "";
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
+
+    if (diffHours < 24) {
+      return date.toLocaleTimeString("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } else if (diffHours < 48) {
+      return "Yesterday";
+    } else {
+      return date.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+      });
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center">
@@ -468,18 +577,21 @@ export default function JobDetailPage() {
               </span>
             )}
           </button>
-          {assignedWorker && (
-            <button
-              onClick={() => setActiveTab("messages")}
-              className={`pb-2 text-sm font-medium transition border-b-2 ${
-                activeTab === "messages"
-                  ? "text-purple-600 border-purple-600"
-                  : "text-gray-500 border-transparent hover:text-gray-700"
-              }`}
-            >
-              Messages
-            </button>
-          )}
+          <button
+            onClick={() => setActiveTab("messages")}
+            className={`pb-2 text-sm font-medium transition border-b-2 flex items-center gap-2 ${
+              activeTab === "messages"
+                ? "text-purple-600 border-purple-600"
+                : "text-gray-500 border-transparent hover:text-gray-700"
+            }`}
+          >
+            Messages
+            {conversations.length > 0 && (
+              <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs rounded-full">
+                {conversations.length}
+              </span>
+            )}
+          </button>
         </div>
       </div>
 
@@ -724,27 +836,63 @@ export default function JobDetailPage() {
           </div>
         )}
 
-        {activeTab === "messages" && assignedWorker && (
+        {activeTab === "messages" && (
           <div className="space-y-4">
-            <div className="bg-gray-50 rounded-xl p-4">
-              <div className="flex items-center gap-3">
-                <Avatar profile={assignedWorker} size="md" />
-                <div>
-                  <h3 className="font-semibold text-gray-900">
-                    {assignedWorker.full_name}
-                  </h3>
-                  <p className="text-sm text-gray-600">
-                    {assignedWorker.email}
-                  </p>
-                </div>
+            {conversations.length > 0 ? (
+              conversations.map((conversation) => (
+                <Link
+                  key={conversation.worker.id}
+                  href={`/customer/dashboard/chat/${jobId}?worker=${conversation.worker.id}`}
+                  className="block border border-gray-200 rounded-xl p-4 hover:shadow-md transition hover:bg-gray-50"
+                >
+                  <div className="flex items-start gap-3">
+                    <Avatar profile={conversation.worker} size="md" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-1">
+                        <h3 className="font-semibold text-gray-900">
+                          {conversation.worker.full_name}
+                        </h3>
+                        {conversation.lastMessageTime && (
+                          <span className="text-xs text-gray-400">
+                            {formatMessageTime(conversation.lastMessageTime)}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm text-gray-500 mb-1">
+                        {conversation.worker.email}
+                      </p>
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm text-gray-600 truncate flex-1">
+                          {conversation.lastMessage === "No messages yet" ? (
+                            <span className="text-gray-400 italic">
+                              {conversation.lastMessage}
+                            </span>
+                          ) : (
+                            conversation.lastMessage
+                          )}
+                        </p>
+                        {conversation.unreadCount > 0 && (
+                          <span className="ml-2 px-2 py-0.5 bg-purple-600 text-white text-xs rounded-full">
+                            {conversation.unreadCount}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                  </div>
+                </Link>
+              ))
+            ) : (
+              <div className="text-center py-12">
+                <MessageSquare className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                <h3 className="text-lg font-medium text-gray-900 mb-1">
+                  No conversations yet
+                </h3>
+                <p className="text-sm text-gray-500">
+                  Start a conversation with workers who have applied to your job
+                </p>
               </div>
-            </div>
-            <Link
-              href={`/customer/dashboard/chat/${jobId}?worker=${assignedWorker.id}`}
-              className="block w-full px-4 py-3 bg-purple-600 text-white text-center rounded-lg hover:bg-purple-700 transition font-medium"
-            >
-              Open Chat
-            </Link>
+            )}
           </div>
         )}
       </div>

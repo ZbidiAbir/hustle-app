@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { format, isToday, isYesterday } from "date-fns";
 
@@ -50,8 +50,57 @@ export default function CustomerChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const params = useParams();
+  const searchParams = useSearchParams();
   const router = useRouter();
   const jobId = params.jobId as string;
+  const workerIdFromUrl = searchParams.get("worker");
+
+  // Function to fetch messages for the selected worker
+  const fetchMessagesForWorker = async (workerId: string | null) => {
+    if (!workerId) {
+      setMessages([]);
+      return;
+    }
+
+    try {
+      // Fetch messages where the sender is either the customer or the selected worker
+      const { data, error } = await supabase
+        .from("messages")
+        .select("*")
+        .eq("job_id", jobId)
+        .or(`sender_id.eq.${currentUser?.id},sender_id.eq.${workerId}`)
+        .order("created_at", { ascending: true });
+
+      if (error) throw error;
+
+      // Add sender names
+      const messagesWithNames = await Promise.all(
+        (data || []).map(async (msg) => {
+          let senderName = "Unknown";
+
+          if (msg.sender_id === currentUser?.id) {
+            senderName = "You";
+          } else {
+            const senderWorker = workers.find((w) => w.id === msg.sender_id);
+            senderName = senderWorker?.full_name || "Worker";
+          }
+
+          return { ...msg, sender_name: senderName };
+        })
+      );
+
+      setMessages(messagesWithNames);
+    } catch (error) {
+      console.error("Error loading messages:", error);
+    }
+  };
+
+  // Function to update URL with selected worker
+  const updateUrlWithWorker = (workerId: string) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("worker", workerId);
+    router.replace(url.pathname + url.search, { scroll: false });
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -124,19 +173,39 @@ export default function CustomerChatPage() {
 
           setWorkers(workersList);
 
-          // Auto-select the first worker (or the assigned one if exists)
-          if (jobData.worker_id) {
-            const assignedWorker = workersList.find(
-              (w) => w.id === jobData.worker_id
-            );
-            if (assignedWorker) setSelectedWorker(assignedWorker);
-          } else if (workersList.length > 0) {
-            setSelectedWorker(workersList[0]);
-          }
-        }
+          // Auto-select worker based on URL parameter or default
+          let initialWorker = null;
 
-        // 6. Fetch messages
-        await fetchMessages();
+          // Check if workerId is in URL and exists in workersList
+          if (workerIdFromUrl) {
+            initialWorker = workersList.find((w) => w.id === workerIdFromUrl);
+          }
+
+          // If not found in URL or URL param is invalid, use assigned worker or first worker
+          if (!initialWorker) {
+            if (jobData.worker_id) {
+              initialWorker = workersList.find(
+                (w) => w.id === jobData.worker_id
+              );
+            } else if (workersList.length > 0) {
+              initialWorker = workersList[0];
+            }
+          }
+
+          if (initialWorker) {
+            setSelectedWorker(initialWorker);
+            // Update URL with the selected worker if not already set
+            if (!workerIdFromUrl || workerIdFromUrl !== initialWorker.id) {
+              updateUrlWithWorker(initialWorker.id);
+            }
+            // Fetch messages for the initial worker
+            await fetchMessagesForWorker(initialWorker.id);
+          }
+        } else {
+          setWorkers([]);
+          setSelectedWorker(null);
+          setMessages([]);
+        }
       } catch (error) {
         console.error("Error:", error);
         setError("An error occurred");
@@ -148,14 +217,23 @@ export default function CustomerChatPage() {
     if (jobId) {
       fetchData();
     }
-  }, [jobId]);
+  }, [jobId, workerIdFromUrl]);
+
+  // Fetch messages when selected worker changes
+  useEffect(() => {
+    if (selectedWorker && currentUser) {
+      fetchMessagesForWorker(selectedWorker.id);
+    } else {
+      setMessages([]);
+    }
+  }, [selectedWorker, currentUser]);
 
   // Real-time subscription
   useEffect(() => {
-    if (!jobId || !currentUser) return;
+    if (!jobId || !currentUser || !selectedWorker) return;
 
     const subscription = supabase
-      .channel(`messages:${jobId}`)
+      .channel(`messages:${jobId}:${selectedWorker.id}`)
       .on(
         "postgres_changes",
         {
@@ -167,19 +245,27 @@ export default function CustomerChatPage() {
         async (payload) => {
           const newMsg = payload.new as Message;
 
-          // Determine sender name
-          let senderName = "Unknown";
-          if (newMsg.sender_id === currentUser.id) {
-            senderName = "You";
-          } else {
-            const senderWorker = workers.find((w) => w.id === newMsg.sender_id);
-            senderName = senderWorker?.full_name || "Worker";
-          }
+          // Only add message if it's from the current user or the selected worker
+          if (
+            newMsg.sender_id === currentUser.id ||
+            newMsg.sender_id === selectedWorker.id
+          ) {
+            // Determine sender name
+            let senderName = "Unknown";
+            if (newMsg.sender_id === currentUser.id) {
+              senderName = "You";
+            } else {
+              const senderWorker = workers.find(
+                (w) => w.id === newMsg.sender_id
+              );
+              senderName = senderWorker?.full_name || "Worker";
+            }
 
-          setMessages((prev) => [
-            ...prev,
-            { ...newMsg, sender_name: senderName },
-          ]);
+            setMessages((prev) => [
+              ...prev,
+              { ...newMsg, sender_name: senderName },
+            ]);
+          }
         }
       )
       .subscribe();
@@ -187,7 +273,7 @@ export default function CustomerChatPage() {
     return () => {
       subscription.unsubscribe();
     };
-  }, [jobId, currentUser, workers]);
+  }, [jobId, currentUser, workers, selectedWorker]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -199,41 +285,9 @@ export default function CustomerChatPage() {
     inputRef.current?.focus();
   }, []);
 
-  const fetchMessages = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("messages")
-        .select("*")
-        .eq("job_id", jobId)
-        .order("created_at", { ascending: true });
-
-      if (error) throw error;
-
-      // Add sender names
-      const messagesWithNames = await Promise.all(
-        (data || []).map(async (msg) => {
-          let senderName = "Unknown";
-
-          if (msg.sender_id === currentUser?.id) {
-            senderName = "You";
-          } else {
-            const senderWorker = workers.find((w) => w.id === msg.sender_id);
-            senderName = senderWorker?.full_name || "Worker";
-          }
-
-          return { ...msg, sender_name: senderName };
-        })
-      );
-
-      setMessages(messagesWithNames);
-    } catch (error) {
-      console.error("Error loading messages:", error);
-    }
-  };
-
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim() || !currentUser || !job) return;
+    if (!newMessage.trim() || !currentUser || !job || !selectedWorker) return;
 
     setSending(true);
 
@@ -260,6 +314,7 @@ export default function CustomerChatPage() {
 
   const switchWorker = (worker: Worker) => {
     setSelectedWorker(worker);
+    updateUrlWithWorker(worker.id);
     setShowWorkerSelector(false);
   };
 
@@ -384,7 +439,7 @@ export default function CustomerChatPage() {
             {/* Left section */}
             <div className="flex items-center space-x-4">
               <Link
-                href="/customer/my-jobs"
+                href="/customer/dashboard/my-jobs"
                 className="p-2 hover:bg-gray-100 rounded-full transition-colors group"
               >
                 <svg
@@ -403,7 +458,7 @@ export default function CustomerChatPage() {
               </Link>
 
               {/* Worker selector */}
-              {workers.length > 0 ? (
+              {workers.length > 0 && selectedWorker ? (
                 <div className="flex items-center gap-3">
                   {/* Selected worker avatar */}
                   <div
@@ -563,10 +618,8 @@ export default function CustomerChatPage() {
                   No messages yet
                 </h3>
                 <p className="text-gray-500">
-                  {workers.length > 0
-                    ? `Start the conversation with ${
-                        selectedWorker?.full_name || "the worker"
-                      }!`
+                  {workers.length > 0 && selectedWorker
+                    ? `Start the conversation with ${selectedWorker.full_name}!`
                     : "Leave a message, workers will see it when they apply"}
                 </p>
               </div>
@@ -598,11 +651,17 @@ export default function CustomerChatPage() {
                       {/* Avatar for worker messages */}
                       {!isMine && showAvatar && senderWorker && (
                         <div className="w-12 h-12 rounded-full bg-gray flex items-center justify-center text-white font-bold text-lg">
-                          <img
-                            src={senderWorker.avatar_url}
-                            alt=""
-                            className="rounded-full"
-                          />{" "}
+                          {senderWorker.avatar_url ? (
+                            <img
+                              src={senderWorker.avatar_url}
+                              alt=""
+                              className="w-full h-full rounded-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-full rounded-full bg-linear-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white font-bold text-lg">
+                              {senderWorker.full_name.charAt(0).toUpperCase()}
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -642,13 +701,20 @@ export default function CustomerChatPage() {
                       </div>
 
                       {/* Avatar for user messages */}
-                      {isMine && (
+                      {isMine && currentUser && (
                         <div className="w-12 h-12 rounded-full bg-gray flex items-center justify-center text-white font-bold text-lg">
-                          <img
-                            src={currentUser.avatar_url}
-                            alt=""
-                            className="rounded-full"
-                          />{" "}
+                          {currentUser.avatar_url ? (
+                            <img
+                              src={currentUser.avatar_url}
+                              alt=""
+                              className="w-full h-full rounded-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-full rounded-full bg-linear-to-br from-green-500 to-teal-500 flex items-center justify-center text-white font-bold text-lg">
+                              {currentUser.email?.charAt(0).toUpperCase() ||
+                                "U"}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -672,8 +738,8 @@ export default function CustomerChatPage() {
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}
                 placeholder={
-                  workers.length > 0
-                    ? `Message ${selectedWorker?.full_name || "the worker"}...`
+                  workers.length > 0 && selectedWorker
+                    ? `Message ${selectedWorker.full_name}...`
                     : "Leave a message for workers who apply..."
                 }
                 className="w-full p-3 pl-5 pr-12 border border-gray-200 rounded-full focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50 transition-all"
@@ -682,7 +748,7 @@ export default function CustomerChatPage() {
             </div>
             <button
               type="submit"
-              disabled={sending || !newMessage.trim()}
+              disabled={sending || !newMessage.trim() || !selectedWorker}
               className="px-6 py-3 bg-linear-to-r from-blue-600 to-purple-600 text-white rounded-full hover:from-blue-700 hover:to-purple-700 disabled:opacity-50 transition-all shadow-md hover:shadow-lg font-medium flex items-center gap-2"
             >
               {sending ? (
@@ -741,7 +807,7 @@ export default function CustomerChatPage() {
             </div>
           )}
 
-          {workers.length > 1 && (
+          {workers.length > 1 && selectedWorker && (
             <p className="text-xs text-gray-400 text-center mt-2">
               You're chatting with {workers.length} workers. Click on the avatar
               to switch between conversations.
