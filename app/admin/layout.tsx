@@ -50,57 +50,75 @@ export default function AdminLayout({
 
   useEffect(() => {
     const getUser = async () => {
-      const {
-        data: { user: authUser },
-      } = await supabase.auth.getUser();
+      try {
+        const {
+          data: { user: authUser },
+        } = await supabase.auth.getUser();
 
-      if (!authUser) {
-        router.push("/login");
-        return;
-      }
+        if (!authUser) {
+          router.push("/login");
+          return;
+        }
 
-      // Vérifier que l'utilisateur est admin
-      if (authUser.user_metadata?.role !== "admin") {
-        router.push("/dashboard");
-        return;
-      }
-
-      // Récupérer les infos du profil
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("full_name, email, avatar_url, role")
-        .eq("id", authUser.id)
-        .single();
-
-      setUser(profile);
-
-      // Récupérer les stats pour les badges
-      const [pendingUsers, pendingJobs, reported] = await Promise.all([
-        supabase
+        // Récupérer le rôle depuis la table profiles
+        const { data: profile, error: profileError } = await supabase
           .from("profiles")
-          .select("*", { count: "exact", head: true })
-          .eq("status", "pending"),
-        supabase
-          .from("jobs")
-          .select("*", { count: "exact", head: true })
-          .eq("status", "reported"),
-        supabase
-          .from("reports")
-          .select("*", { count: "exact", head: true })
-          .eq("resolved", false),
-      ]);
+          .select("full_name, email, avatar_url, role")
+          .eq("id", authUser.id)
+          .single();
 
-      setStats({
-        pendingUsers: pendingUsers.count || 0,
-        pendingJobs: pendingJobs.count || 0,
-        reportedContent: reported.count || 0,
-      });
+        if (profileError || !profile) {
+          console.error("Error fetching profile:", profileError);
+          router.push("/login");
+          return;
+        }
 
-      setLoading(false);
+        // Vérifier que l'utilisateur est admin
+        if (profile.role !== "admin") {
+          // Redirect to appropriate dashboard based on role
+          if (profile.role === "worker") {
+            router.push("/worker/dashboard");
+          } else if (profile.role === "customer") {
+            router.push("/customer/dashboard");
+          } else {
+            router.push("/");
+          }
+          return;
+        }
+
+        setUser(profile);
+
+        // Récupérer les stats pour les badges
+        const [pendingUsers, pendingJobs, reported] = await Promise.all([
+          supabase
+            .from("profiles")
+            .select("*", { count: "exact", head: true })
+            .eq("status", "pending"),
+          supabase
+            .from("jobs")
+            .select("*", { count: "exact", head: true })
+            .eq("status", "reported"),
+          supabase
+            .from("reports")
+            .select("*", { count: "exact", head: true })
+            .eq("resolved", false),
+        ]);
+
+        setStats({
+          pendingUsers: pendingUsers.count || 0,
+          pendingJobs: pendingJobs.count || 0,
+          reportedContent: reported.count || 0,
+        });
+      } catch (error) {
+        console.error("Error in admin layout:", error);
+        router.push("/login");
+      } finally {
+        setLoading(false);
+      }
     };
 
     getUser();
-  }, []);
+  }, [router]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -133,7 +151,6 @@ export default function AdminLayout({
       href: "/admin/convs",
       icon: MessageSquare,
       current: pathname === "/admin/convs",
-      badge: stats.pendingJobs,
     },
     {
       name: "Applications",
@@ -175,11 +192,10 @@ export default function AdminLayout({
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Top Navigation */}
+      {/* Top Navigation - Keep the same as your existing code */}
       <nav className="bg-white border-b border-gray-200 fixed w-full z-30 top-0">
         <div className="px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            {/* Left section */}
             <div className="flex items-center gap-4">
               <button
                 onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -198,7 +214,6 @@ export default function AdminLayout({
               </Link>
             </div>
 
-            {/* Search */}
             <div className="hidden md:flex flex-1 max-w-md mx-4">
               <div className="relative w-full">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -210,9 +225,7 @@ export default function AdminLayout({
               </div>
             </div>
 
-            {/* Right section */}
             <div className="flex items-center gap-3">
-              {/* Notifications */}
               <button className="relative p-2 rounded-lg hover:bg-gray-100">
                 <Bell className="w-5 h-5 text-gray-600" />
                 {stats.reportedContent > 0 && (
@@ -224,7 +237,6 @@ export default function AdminLayout({
                 )}
               </button>
 
-              {/* User menu */}
               <div className="relative">
                 <button
                   onClick={() => setShowUserMenu(!showUserMenu)}
@@ -239,7 +251,6 @@ export default function AdminLayout({
                   <ChevronDown className="w-4 h-4 text-gray-500" />
                 </button>
 
-                {/* Dropdown */}
                 {showUserMenu && (
                   <>
                     <div
@@ -293,7 +304,6 @@ export default function AdminLayout({
       `}
       >
         <div className="h-full overflow-y-auto p-4">
-          {/* Admin stats */}
           <div className="mb-6 p-4 bg-gradient-to-r from-red-50 to-red-100 rounded-xl">
             <div className="flex items-center gap-2 mb-3">
               <Shield className="w-5 h-5 text-red-600" />
@@ -317,7 +327,6 @@ export default function AdminLayout({
             </div>
           </div>
 
-          {/* Navigation */}
           <nav className="space-y-1">
             {navigation.map((item) => {
               const Icon = item.icon;
@@ -350,7 +359,6 @@ export default function AdminLayout({
             })}
           </nav>
 
-          {/* Quick actions */}
           <div className="absolute bottom-0 left-0 right-0 p-4 border-t bg-white">
             <div className="space-y-2">
               <button className="w-full px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition text-sm font-medium flex items-center justify-center gap-2">
@@ -364,7 +372,7 @@ export default function AdminLayout({
 
       {/* Main content */}
       <main className="lg:pl-64 pt-16 min-h-screen">
-        <div className="">{children}</div>
+        <div className="p-4 md:p-6">{children}</div>
       </main>
 
       {/* Mobile overlay */}

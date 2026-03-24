@@ -42,6 +42,7 @@ export default function LoginPage() {
     setMessage({ text: "Logging in...", type: "info" });
 
     try {
+      // 1. Se connecter avec email et mot de passe
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -49,22 +50,46 @@ export default function LoginPage() {
 
       if (error) throw error;
 
+      // 2. Récupérer le rôle depuis la table profiles
+      const { data: profileData, error: profileError } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", data.user?.id)
+        .single();
+
+      if (profileError) {
+        console.error("Error fetching profile:", profileError);
+        // Si erreur, utiliser le rôle par défaut
+        const role = "customer";
+        setMessage({
+          text: "✅ Login successful! Redirecting...",
+          type: "success",
+        });
+        setTimeout(() => {
+          router.push(`/${role}/dashboard`);
+        }, 1500);
+        return;
+      }
+
+      const role = profileData?.role || "customer";
+
+      console.log("User role from profiles:", role); // Debug log
+
       setMessage({
         text: "✅ Login successful! Redirecting...",
         type: "success",
       });
 
-      // Get role from metadata
-      const role = data.user?.user_metadata?.role || "customer";
-
-      // Redirect to the appropriate dashboard
+      // 3. Rediriger vers le dashboard approprié
       setTimeout(() => {
         if (role === "worker") {
           router.push("/worker/dashboard");
         } else if (role === "customer") {
           router.push("/customer/dashboard");
-        } else {
+        } else if (role === "admin") {
           router.push("/admin/dashboard");
+        } else {
+          router.push("/");
         }
       }, 1500);
     } catch (error: any) {
