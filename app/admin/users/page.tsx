@@ -44,6 +44,7 @@ import {
   Activity,
   BadgeCheck,
   BadgeX,
+  ThumbsUp,
 } from "lucide-react";
 
 type User = {
@@ -55,13 +56,11 @@ type User = {
   phone: string | null;
   created_at: string;
   updated_at?: string;
-  // Informations personnelles
   address?: string | null;
   city?: string | null;
   country?: string | null;
   zip_code?: string | null;
   job_title?: string | null;
-  // Informations professionnelles (workers)
   company_name?: string | null;
   company_logo_url?: string | null;
   company_phone?: string | null;
@@ -80,12 +79,10 @@ type User = {
   level?: string | null;
   hourly_rate?: number | null;
   rate_type?: string | null;
-  // Vérifications et statuts
   business_verified?: boolean;
   insurance_verified?: boolean;
   insurance_url?: string | null;
   loyalty_points?: number;
-  // Informations de paiement
   payment_method?: string | null;
   bank_name?: string | null;
   bank_account_holder?: string | null;
@@ -94,8 +91,15 @@ type User = {
   card_last_four?: string | null;
   card_expiry_date?: string | null;
   card_holder_name?: string | null;
-  // Métadonnées
   metadata?: any;
+};
+
+type RatingStats = {
+  averageRating: number | null;
+  displayedRating: number | null;
+  totalRatings: number;
+  isEstablished: boolean;
+  statusText: string;
 };
 
 type UserWithStats = User & {
@@ -104,7 +108,7 @@ type UserWithStats = User & {
   jobs_in_progress?: number;
   total_earnings?: number;
   total_spent?: number;
-  rating?: number;
+  rating_stats?: RatingStats;
   reviews_count?: number;
   reports_count?: number;
   last_active?: string;
@@ -154,6 +158,87 @@ export default function AdminUsersPage() {
 
   const router = useRouter();
 
+  // Fonction pour calculer les statistiques de rating selon la formule
+  // Fonction pour calculer les statistiques de rating selon la formule
+  const calculateRatingStats = (ratings: number[]): RatingStats => {
+    const totalRatings = ratings.length;
+
+    if (totalRatings === 0) {
+      return {
+        averageRating: null,
+        displayedRating: null,
+        totalRatings: 0,
+        isEstablished: false,
+        statusText: "No ratings",
+      };
+    }
+
+    let averageRating: number | null = null;
+    let displayedRating: number | null = null;
+    let isEstablished = false;
+    let statusText = "";
+
+    if (totalRatings >= 5) {
+      isEstablished = true;
+
+      if (totalRatings >= 10) {
+        // Exclure la note la plus basse
+        const sortedRatings = [...ratings].sort((a, b) => a - b);
+        const ratingsWithoutLowest = sortedRatings.slice(1);
+        const sum = ratingsWithoutLowest.reduce((acc, r) => acc + r, 0);
+        averageRating = sum / ratingsWithoutLowest.length;
+        displayedRating = parseFloat(averageRating.toFixed(1));
+        statusText = "Established";
+      } else {
+        // Moyenne arithmétique simple
+        const sum = ratings.reduce((acc, r) => acc + r, 0);
+        averageRating = sum / totalRatings;
+        displayedRating = parseFloat(averageRating.toFixed(1));
+        statusText = "Established";
+      }
+    } else {
+      // Moins de 5 ratings
+      const sum = ratings.reduce((acc, r) => acc + r, 0);
+      averageRating = sum / totalRatings;
+      displayedRating = null;
+      // Afficher "New" pour 1 rating, "Establishing" pour 2-4 ratings
+      statusText = totalRatings === 1 ? "New" : "Establishing";
+    }
+
+    return {
+      averageRating,
+      displayedRating,
+      totalRatings,
+      isEstablished,
+      statusText,
+    };
+  };
+
+  // Récupérer les ratings d'un worker depuis la table rates
+  const fetchWorkerRatings = async (workerId: string): Promise<RatingStats> => {
+    try {
+      const { data: rates, error } = await supabase
+        .from("rates")
+        .select("rating")
+        .eq("reviewee_id", workerId)
+        .eq("category", "worker");
+
+      if (error) throw error;
+
+      const ratings = rates?.map((r) => r.rating) || [];
+      return calculateRatingStats(ratings);
+    } catch (error) {
+      console.error(`Error fetching ratings for worker ${workerId}:`, error);
+      return {
+        averageRating: null,
+        displayedRating: null,
+        totalRatings: 0,
+        isEstablished: false,
+        statusText: "No ratings",
+      };
+    }
+  };
+
   useEffect(() => {
     fetchUsers();
   }, []);
@@ -178,7 +263,6 @@ export default function AdminUsersPage() {
     try {
       setLoading(true);
 
-      // Récupérer tous les profils avec TOUS les champs
       const { data: profiles, error } = await supabase
         .from("profiles")
         .select("*")
@@ -200,7 +284,13 @@ export default function AdminUsersPage() {
           let jobsPosted = 0;
           let totalEarnings = 0;
           let totalSpent = 0;
-          let rating = 0;
+          let ratingStats: RatingStats = {
+            averageRating: null,
+            displayedRating: null,
+            totalRatings: 0,
+            isEstablished: false,
+            statusText: "No ratings",
+          };
           let reviewsCount = 0;
           let reportsCount = 0;
 
@@ -231,20 +321,13 @@ export default function AdminUsersPage() {
             totalEarnings =
               completedJobs?.reduce((sum, job) => {
                 if (job.fixed_rate) return sum + job.fixed_rate;
-                if (job.hourly_rate) return sum + job.hourly_rate * 8; // Estimation 8h
+                if (job.hourly_rate) return sum + job.hourly_rate * 8;
                 return sum + (job.price || 0);
               }, 0) || 0;
 
-            // Notes et avis
-            const { data: reviews } = await supabase
-              .from("reviews")
-              .select("rating")
-              .eq("worker_id", user.id);
-            if (reviews && reviews.length > 0) {
-              rating =
-                reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
-              reviewsCount = reviews.length;
-            }
+            // Récupérer les ratings depuis la table rates
+            ratingStats = await fetchWorkerRatings(user.id);
+            reviewsCount = ratingStats.totalRatings;
           } else if (user.role === "customer") {
             // Jobs postés
             const { count: postedCount } = await supabase
@@ -275,7 +358,6 @@ export default function AdminUsersPage() {
             .eq("reported_user_id", user.id);
           reportsCount = reports || 0;
 
-          // Déterminer le statut du compte
           const accountStatus = determineAccountStatus(user);
           const verificationStatus = getVerificationStatus(user);
 
@@ -286,7 +368,7 @@ export default function AdminUsersPage() {
             jobs_posted: jobsPosted,
             total_earnings: totalEarnings,
             total_spent: totalSpent,
-            rating: rating,
+            rating_stats: ratingStats,
             reviews_count: reviewsCount,
             reports_count: reportsCount,
             account_status: accountStatus,
@@ -335,7 +417,6 @@ export default function AdminUsersPage() {
   const filterUsers = () => {
     let filtered = [...users];
 
-    // Recherche textuelle
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(
@@ -352,19 +433,16 @@ export default function AdminUsersPage() {
       );
     }
 
-    // Filtre par rôle
     if (filters.role !== "all") {
       filtered = filtered.filter((user) => user.role === filters.role);
     }
 
-    // Filtre par statut
     if (filters.status !== "all") {
       filtered = filtered.filter(
         (user) => user.account_status === filters.status
       );
     }
 
-    // Filtre par vérification
     if (filters.verification === "verified") {
       filtered = filtered.filter(
         (user) => user.verification_status === "verified"
@@ -377,7 +455,6 @@ export default function AdminUsersPage() {
       filtered = filtered.filter((user) => user.verification_status === "none");
     }
 
-    // Filtre par date
     if (filters.dateRange !== "all") {
       const now = new Date();
       const filterDate = new Date();
@@ -410,7 +487,6 @@ export default function AdminUsersPage() {
       }
     }
 
-    // Tri
     filtered.sort((a, b) => {
       let aValue = a[sortConfig.key as keyof UserWithStats];
       let bValue = b[sortConfig.key as keyof UserWithStats];
@@ -418,6 +494,11 @@ export default function AdminUsersPage() {
       if (sortConfig.key === "full_name") {
         aValue = a.full_name || "";
         bValue = b.full_name || "";
+      }
+
+      if (sortConfig.key === "rating") {
+        aValue = a.rating_stats?.displayedRating || 0;
+        bValue = b.rating_stats?.displayedRating || 0;
       }
 
       if (typeof aValue === "string" && typeof bValue === "string") {
@@ -566,13 +647,16 @@ export default function AdminUsersPage() {
       trade_category: user.trade_category,
       skills: user.skills?.join(", "),
       hourly_rate: user.hourly_rate,
+      rating: user.rating_stats?.displayedRating || "N/A",
+      reviews_count: user.reviews_count || 0,
       business_verified: user.business_verified ? "Yes" : "No",
       insurance_verified: user.insurance_verified ? "Yes" : "No",
       verification_status: user.verification_status,
       loyalty_points: user.loyalty_points,
-      jobs_completed: user.jobs_completed,
-      jobs_posted: user.jobs_posted,
-      rating: user.rating?.toFixed(1),
+      jobs_completed: user.jobs_completed || 0,
+      jobs_posted: user.jobs_posted || 0,
+      total_earnings: user.total_earnings || 0,
+      total_spent: user.total_spent || 0,
       created_at: new Date(user.created_at).toLocaleDateString(),
       status: user.account_status,
     }));
@@ -585,7 +669,8 @@ export default function AdminUsersPage() {
   };
 
   const convertToCSV = (data: any[]) => {
-    const headers = Object.keys(data[0] || {}).join(",");
+    if (data.length === 0) return "";
+    const headers = Object.keys(data[0]).join(",");
     const rows = data.map((obj) =>
       Object.values(obj)
         .map((value) =>
@@ -703,6 +788,67 @@ export default function AdminUsersPage() {
     }
   };
 
+  const RatingDisplay = ({ stats }: { stats?: RatingStats }) => {
+    if (!stats || stats.totalRatings === 0) {
+      return (
+        <div className="flex items-center gap-1">
+          <Star className="w-4 h-4 text-gray-300" />
+          <span className="text-sm text-gray-400">No ratings yet</span>
+        </div>
+      );
+    }
+
+    // Cas où le worker a des ratings mais pas assez pour être établi (< 5)
+    if (!stats.isEstablished && stats.totalRatings > 0) {
+      return (
+        <div className="flex items-center gap-1.5">
+          <Star className="w-4 h-4 text-gray-400" />
+          <span className="text-sm font-medium text-gray-600">
+            {stats.statusText}
+          </span>
+          <span className="text-xs text-gray-400">
+            ({stats.totalRatings} rating{stats.totalRatings !== 1 ? "s" : ""})
+          </span>
+        </div>
+      );
+    }
+
+    // Cas où le worker a 5+ ratings
+    if (stats.isEstablished && stats.displayedRating) {
+      return (
+        <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-0.5">
+            {[...Array(5)].map((_, i) => (
+              <Star
+                key={i}
+                className={`w-3.5 h-3.5 ${
+                  i < Math.floor(stats.displayedRating!)
+                    ? "fill-amber-500 text-amber-500"
+                    : i === Math.floor(stats.displayedRating!) &&
+                      stats.displayedRating! % 1 >= 0.5
+                    ? "fill-amber-500 text-amber-500 opacity-50"
+                    : "text-gray-300"
+                }`}
+              />
+            ))}
+          </div>
+          <span className="font-medium text-sm text-amber-700">
+            {stats.displayedRating}
+          </span>
+          <span className="text-xs text-gray-400">({stats.totalRatings})</span>
+        </div>
+      );
+    }
+
+    // Fallback
+    return (
+      <div className="flex items-center gap-1">
+        <Star className="w-4 h-4 text-gray-400" />
+        <span className="text-sm text-gray-500">No rating</span>
+      </div>
+    );
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
@@ -729,7 +875,6 @@ export default function AdminUsersPage() {
               </p>
             </div>
 
-            {/* Bulk Actions */}
             {selectedUsers.length > 0 && (
               <div className="flex items-center gap-2 bg-red-50 px-3 py-2 rounded-lg">
                 <span className="text-sm text-red-700 font-medium">
@@ -767,7 +912,7 @@ export default function AdminUsersPage() {
 
       {/* Main Content */}
       <div className="px-4 sm:px-6 lg:px-8 py-6">
-        <div className="max-w-7xl mx-auto space-y-6">
+        <div className=" space-y-6">
           {/* Stats Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             <StatCard
@@ -781,7 +926,6 @@ export default function AdminUsersPage() {
               value={stats.active}
               icon={UserCheck}
               color="bg-green-100 text-green-600"
-              trend="8"
             />
             <StatCard
               title="Suspended"
@@ -807,75 +951,6 @@ export default function AdminUsersPage() {
               icon={BadgeCheck}
               color="bg-emerald-100 text-emerald-600"
             />
-          </div>
-
-          {/* Quick Stats */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="bg-white rounded-lg p-3 border border-gray-200">
-              <p className="text-xs text-gray-500">Total Earnings</p>
-              <p className="text-lg font-bold text-gray-900">
-                {formatCurrency(
-                  users.reduce((sum, u) => sum + (u.total_earnings || 0), 0)
-                )}
-              </p>
-            </div>
-            <div className="bg-white rounded-lg p-3 border border-gray-200">
-              <p className="text-xs text-gray-500">Total Spent</p>
-              <p className="text-lg font-bold text-gray-900">
-                {formatCurrency(
-                  users.reduce((sum, u) => sum + (u.total_spent || 0), 0)
-                )}
-              </p>
-            </div>
-            <div className="bg-white rounded-lg p-3 border border-gray-200">
-              <p className="text-xs text-gray-500">Jobs Completed</p>
-              <p className="text-lg font-bold text-gray-900">
-                {users.reduce((sum, u) => sum + (u.jobs_completed || 0), 0)}
-              </p>
-            </div>
-            <div className="bg-white rounded-lg p-3 border border-gray-200">
-              <p className="text-xs text-gray-500">Active Reports</p>
-              <p className="text-lg font-bold text-red-600">
-                {users.reduce((sum, u) => sum + (u.reports_count || 0), 0)}
-              </p>
-            </div>
-          </div>
-
-          {/* Verification Stats */}
-          <div className="grid grid-cols-3 gap-3">
-            <div className="bg-emerald-50 rounded-lg p-3 border border-emerald-200">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-emerald-700 font-medium">
-                  Fully Verified
-                </span>
-                <BadgeCheck className="w-4 h-4 text-emerald-600" />
-              </div>
-              <p className="text-lg font-bold text-emerald-700 mt-1">
-                {stats.verified}
-              </p>
-            </div>
-            <div className="bg-amber-50 rounded-lg p-3 border border-amber-200">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-amber-700 font-medium">
-                  Partially Verified
-                </span>
-                <Shield className="w-4 h-4 text-amber-600" />
-              </div>
-              <p className="text-lg font-bold text-amber-700 mt-1">
-                {stats.partial}
-              </p>
-            </div>
-            <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-700 font-medium">
-                  Unverified
-                </span>
-                <BadgeX className="w-4 h-4 text-gray-600" />
-              </div>
-              <p className="text-lg font-bold text-gray-700 mt-1">
-                {stats.unverified}
-              </p>
-            </div>
           </div>
 
           {/* Search and Filters */}
@@ -927,7 +1002,6 @@ export default function AdminUsersPage() {
               </div>
             </div>
 
-            {/* Advanced Filters */}
             {showFilters && (
               <div className="mt-4 pt-4 border-t border-gray-200">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1012,14 +1086,6 @@ export default function AdminUsersPage() {
               <table className="w-full">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="px-4 py-3 text-left">
-                      <input
-                        type="checkbox"
-                        checked={selectAll}
-                        onChange={handleSelectAll}
-                        className="w-4 h-4 text-red-600 rounded border-gray-300 focus:ring-red-500"
-                      />
-                    </th>
                     <th
                       className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
                       onClick={() => handleSort("full_name")}
@@ -1102,14 +1168,6 @@ export default function AdminUsersPage() {
                 <tbody className="divide-y divide-gray-200">
                   {paginatedUsers.map((user) => (
                     <tr key={user.id} className="hover:bg-gray-50 transition">
-                      <td className="px-4 py-3">
-                        <input
-                          type="checkbox"
-                          checked={selectedUsers.includes(user.id)}
-                          onChange={() => handleSelectUser(user.id)}
-                          className="w-4 h-4 text-red-600 rounded border-gray-300 focus:ring-red-500"
-                        />
-                      </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
                           <div
@@ -1237,15 +1295,7 @@ export default function AdminUsersPage() {
                       </td>
                       <td className="px-4 py-3">
                         {user.role === "worker" ? (
-                          <div className="flex items-center gap-1">
-                            <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                            <span className="font-medium">
-                              {user.rating?.toFixed(1) || "0.0"}
-                            </span>
-                            <span className="text-xs text-gray-500">
-                              ({user.reviews_count || 0})
-                            </span>
-                          </div>
+                          <RatingDisplay stats={user.rating_stats} />
                         ) : (
                           <span className="text-gray-400">—</span>
                         )}
@@ -1460,6 +1510,13 @@ export default function AdminUsersPage() {
                       {getVerificationBadge(user.verification_status)}
                     </div>
 
+                    {/* Rating for workers */}
+                    {user.role === "worker" && (
+                      <div className="flex items-center gap-2">
+                        <RatingDisplay stats={user.rating_stats} />
+                      </div>
+                    )}
+
                     {/* Contact Info */}
                     <div className="grid grid-cols-2 gap-2 text-sm">
                       {user.phone && (
@@ -1500,11 +1557,10 @@ export default function AdminUsersPage() {
                           </div>
                           <div>
                             <span className="text-xs text-gray-500 block">
-                              Rating
+                              Reviews
                             </span>
-                            <span className="text-sm font-medium flex items-center gap-1">
-                              <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
-                              {user.rating?.toFixed(1) || "0.0"}
+                            <span className="text-sm font-medium">
+                              {user.reviews_count || 0}
                             </span>
                           </div>
                           {user.hourly_rate && (
@@ -1540,7 +1596,7 @@ export default function AdminUsersPage() {
                       )}
                     </div>
 
-                    {/* Company Info (if any) */}
+                    {/* Company Info */}
                     {user.company_name && (
                       <div className="text-xs text-gray-600">
                         <p className="font-medium">{user.company_name}</p>

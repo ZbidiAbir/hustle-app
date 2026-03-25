@@ -33,6 +33,9 @@ import {
   BadgeCheck,
   Ban,
   RotateCcw,
+  ThumbsUp,
+  Users,
+  TrendingUp,
 } from "lucide-react";
 import { Job } from "@/types/job";
 
@@ -48,6 +51,30 @@ type WorkExperience = {
   current: boolean;
   description: string | null;
   created_at: string;
+};
+
+type RatingStats = {
+  averageRating: number | null;
+  displayedRating: number | null;
+  totalRatings: number;
+  isEstablished: boolean;
+  statusText: string;
+  ratingDistribution: {
+    1: number;
+    2: number;
+    3: number;
+    4: number;
+    5: number;
+  };
+  recentRatings: Array<{
+    id: string;
+    rating: number;
+    review_text: string | null;
+    created_at: string;
+    reviewer_name: string;
+    reviewer_avatar?: string;
+    job_title?: string;
+  }>;
 };
 
 type UserProfile = {
@@ -91,9 +118,83 @@ type UserProfile = {
 type UserStats = {
   jobs_completed: number;
   jobs_posted: number;
-  rating: number | null;
+  rating_stats: RatingStats | null;
   total_earned: number;
   total_spent: number;
+};
+
+// Fonction pour calculer les statistiques de rating selon la formule
+const calculateRatingStats = (
+  ratings: {
+    rating: number;
+    review_text: string | null;
+    created_at: string;
+    reviewer_id: string;
+    job_id: string;
+  }[]
+): RatingStats => {
+  const totalRatings = ratings.length;
+  const ratingValues = ratings.map((r) => r.rating);
+
+  // Distribution des notes
+  const distribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  ratingValues.forEach((r) => {
+    if (r >= 1 && r <= 5) {
+      distribution[r as keyof typeof distribution]++;
+    }
+  });
+
+  if (totalRatings === 0) {
+    return {
+      averageRating: null,
+      displayedRating: null,
+      totalRatings: 0,
+      isEstablished: false,
+      statusText: "No ratings",
+      ratingDistribution: distribution,
+      recentRatings: [],
+    };
+  }
+
+  let averageRating: number | null = null;
+  let displayedRating: number | null = null;
+  let isEstablished = false;
+  let statusText = "";
+
+  if (totalRatings >= 5) {
+    isEstablished = true;
+
+    if (totalRatings >= 10) {
+      // Exclure la note la plus basse
+      const sortedRatings = [...ratingValues].sort((a, b) => a - b);
+      const ratingsWithoutLowest = sortedRatings.slice(1);
+      const sum = ratingsWithoutLowest.reduce((acc, r) => acc + r, 0);
+      averageRating = sum / ratingsWithoutLowest.length;
+      displayedRating = parseFloat(averageRating.toFixed(1));
+      statusText = "Established";
+    } else {
+      // Moyenne arithmétique simple
+      const sum = ratingValues.reduce((acc, r) => acc + r, 0);
+      averageRating = sum / totalRatings;
+      displayedRating = parseFloat(averageRating.toFixed(1));
+      statusText = "Established";
+    }
+  } else {
+    const sum = ratingValues.reduce((acc, r) => acc + r, 0);
+    averageRating = sum / totalRatings;
+    displayedRating = null;
+    statusText = totalRatings === 1 ? "New" : "Establishing";
+  }
+
+  return {
+    averageRating,
+    displayedRating,
+    totalRatings,
+    isEstablished,
+    statusText,
+    ratingDistribution: distribution,
+    recentRatings: [], // Sera rempli après avoir récupéré les infos des reviewers
+  };
 };
 
 export default function AdminUserDetailPage() {
@@ -102,10 +203,11 @@ export default function AdminUserDetailPage() {
   const [stats, setStats] = useState<UserStats>({
     jobs_completed: 0,
     jobs_posted: 0,
-    rating: null,
+    rating_stats: null,
     total_earned: 0,
     total_spent: 0,
   });
+  const [loadingRatings, setLoadingRatings] = useState(false);
 
   // Fonction pour formater le prix d'un job
   const formatJobPrice = (job: Job) => {
@@ -146,7 +248,6 @@ export default function AdminUserDetailPage() {
           : "$0";
 
       default:
-        // Fallback au champ price si pay_type n'est pas défini
         return job.price
           ? new Intl.NumberFormat("en-US", {
               style: "currency",
@@ -156,6 +257,98 @@ export default function AdminUserDetailPage() {
           : "$0";
     }
   };
+
+  // Fonction pour récupérer les ratings du worker
+  const fetchWorkerRatings = async (workerId: string) => {
+    if (!workerId) return;
+
+    setLoadingRatings(true);
+    try {
+      // Récupérer tous les ratings du worker
+      const { data: ratings, error } = await supabase
+        .from("rates")
+        .select(
+          `
+          id,
+          rating,
+          review_text,
+          created_at,
+          reviewer_id,
+          job_id
+        `
+        )
+        .eq("reviewee_id", workerId)
+        .eq("category", "worker")
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      if (!ratings || ratings.length === 0) {
+        setStats((prev) => ({
+          ...prev,
+          rating_stats: calculateRatingStats([]),
+        }));
+        return;
+      }
+
+      // Récupérer les infos des reviewers
+      const reviewerIds = [...new Set(ratings.map((r) => r.reviewer_id))];
+      let reviewersMap = new Map();
+
+      if (reviewerIds.length > 0) {
+        const { data: reviewers } = await supabase
+          .from("profiles")
+          .select("id, full_name, avatar_url")
+          .in("id", reviewerIds);
+
+        reviewers?.forEach((r) => {
+          reviewersMap.set(r.id, { name: r.full_name, avatar: r.avatar_url });
+        });
+      }
+
+      // Récupérer les titres des jobs
+      const jobIds = [...new Set(ratings.map((r) => r.job_id))];
+      let jobsMap = new Map();
+
+      if (jobIds.length > 0) {
+        const { data: jobs } = await supabase
+          .from("jobs")
+          .select("id, title")
+          .in("id", jobIds);
+
+        jobs?.forEach((j) => {
+          jobsMap.set(j.id, j.title);
+        });
+      }
+
+      // Calculer les statistiques
+      const calculatedStats = calculateRatingStats(ratings);
+
+      // Ajouter les détails des reviews récentes
+      const recentRatings = ratings.slice(0, 5).map((r) => ({
+        id: r.id,
+        rating: r.rating,
+        review_text: r.review_text,
+        created_at: r.created_at,
+        reviewer_name: reviewersMap.get(r.reviewer_id)?.name || "Anonymous",
+        reviewer_avatar: reviewersMap.get(r.reviewer_id)?.avatar,
+        job_title: jobsMap.get(r.job_id) || "Job",
+      }));
+
+      setStats((prev) => ({
+        ...prev,
+        rating_stats: {
+          ...calculatedStats,
+          recentRatings,
+        },
+      }));
+    } catch (error) {
+      console.error("Error fetching worker ratings:", error);
+    } finally {
+      setLoadingRatings(false);
+    }
+  };
+
   const [insuranceLoading, setInsuranceLoading] = useState(false);
   const [showInsuranceModal, setShowInsuranceModal] = useState(false);
   const [recentJobs, setRecentJobs] = useState<Job[]>([]);
@@ -169,6 +362,7 @@ export default function AdminUserDetailPage() {
     | "experience"
     | "jobs"
     | "verification"
+    | "ratings"
   >("overview");
   const [verificationLoading, setVerificationLoading] = useState(false);
   const [showVerificationModal, setShowVerificationModal] = useState(false);
@@ -223,6 +417,9 @@ export default function AdminUserDetailPage() {
         if (!expError && expData) {
           setWorkExperience(expData);
         }
+
+        // Récupérer les ratings du worker
+        await fetchWorkerRatings(userId);
       }
 
       // 3. Récupérer les statistiques selon le rôle
@@ -254,7 +451,6 @@ export default function AdminUserDetailPage() {
             if (job.pay_type === "Fixed" && job.fixed_rate) {
               return sum + job.fixed_rate;
             } else if (job.pay_type === "Hourly" && job.hourly_rate) {
-              // Estimation approximative pour les jobs horaires (ex: 8 heures)
               return sum + job.hourly_rate * 8;
             } else if (job.price) {
               return sum + job.price;
@@ -294,12 +490,10 @@ export default function AdminUserDetailPage() {
           .order("created_at", { ascending: false });
 
         if (!jobsError && postedJobs) {
-          // Calculer le total dépensé en fonction du type de paiement
           const totalSpent = postedJobs.reduce((sum, job) => {
             if (job.pay_type === "Fixed" && job.fixed_rate) {
               return sum + job.fixed_rate;
             } else if (job.pay_type === "Hourly" && job.hourly_rate) {
-              // Estimation approximative pour les jobs horaires
               return sum + job.hourly_rate * 8;
             } else if (job.price) {
               return sum + job.price;
@@ -314,7 +508,6 @@ export default function AdminUserDetailPage() {
           }));
           setRecentJobs(
             //@ts-ignore
-
             postedJobs.slice(0, 5)
           );
         }
@@ -333,31 +526,23 @@ export default function AdminUserDetailPage() {
     try {
       setVerificationLoading(true);
 
-      const { data: adminUser } = await supabase.auth.getUser();
-      const adminId = adminUser.user?.id;
-
       const { error } = await supabase
         .from("profiles")
         .update({
           business_verified: true,
-
           updated_at: new Date().toISOString(),
         })
         .eq("id", user.id);
 
       if (error) throw error;
 
-      // Mettre à jour l'état local
       setUser({
         ...user,
         business_verified: true,
-
         updated_at: new Date().toISOString(),
       });
 
       setShowVerificationModal(false);
-
-      // Afficher une notification de succès
       alert("Worker has been successfully verified!");
     } catch (error) {
       console.error("Error verifying worker:", error);
@@ -383,18 +568,15 @@ export default function AdminUserDetailPage() {
         .from("profiles")
         .update({
           business_verified: false,
-
           updated_at: new Date().toISOString(),
         })
         .eq("id", user.id);
 
       if (error) throw error;
 
-      // Mettre à jour l'état local
       setUser({
         ...user,
         business_verified: false,
-
         updated_at: new Date().toISOString(),
       });
 
@@ -406,6 +588,7 @@ export default function AdminUserDetailPage() {
       setVerificationLoading(false);
     }
   };
+
   const handleVerifyInsurance = async () => {
     if (!user || user.role !== "worker") return;
 
@@ -422,7 +605,6 @@ export default function AdminUserDetailPage() {
 
       if (error) throw error;
 
-      // Mettre à jour l'état local
       setUser({
         ...user,
         insurance_verified: true,
@@ -463,7 +645,6 @@ export default function AdminUserDetailPage() {
 
       if (error) throw error;
 
-      // Mettre à jour l'état local
       setUser({
         ...user,
         insurance_verified: false,
@@ -478,6 +659,7 @@ export default function AdminUserDetailPage() {
       setInsuranceLoading(false);
     }
   };
+
   const getInitials = (name: string | null) => {
     if (!name) return "U";
     return name
@@ -527,6 +709,57 @@ export default function AdminUserDetailPage() {
     }
   };
 
+  // Composant d'affichage du rating
+  const RatingDisplay = ({ stats }: { stats?: RatingStats | null }) => {
+    if (!stats || stats.totalRatings === 0) {
+      return (
+        <div className="flex items-center gap-1">
+          <Star className="w-4 h-4 text-gray-300" />
+          <span className="text-sm text-gray-400">No ratings yet</span>
+        </div>
+      );
+    }
+
+    if (!stats.isEstablished && stats.totalRatings > 0) {
+      return (
+        <div className="flex items-center gap-1.5">
+          <Star className="w-4 h-4 text-gray-400" />
+          <span className="text-sm font-medium text-gray-600">
+            {stats.statusText}
+          </span>
+          <span className="text-xs text-gray-400">
+            ({stats.totalRatings} rating{stats.totalRatings !== 1 ? "s" : ""})
+          </span>
+        </div>
+      );
+    }
+
+    if (stats.isEstablished && stats.displayedRating) {
+      return (
+        <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-0.5">
+            {[...Array(5)].map((_, i) => (
+              <Star
+                key={i}
+                className={`w-4 h-4 ${
+                  i < Math.floor(stats.displayedRating!)
+                    ? "fill-amber-500 text-amber-500"
+                    : "text-gray-300"
+                }`}
+              />
+            ))}
+          </div>
+          <span className="font-medium text-sm text-amber-700">
+            {stats.displayedRating}
+          </span>
+          <span className="text-xs text-gray-400">({stats.totalRatings})</span>
+        </div>
+      );
+    }
+
+    return null;
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
@@ -564,7 +797,7 @@ export default function AdminUserDetailPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-white  shadow-sm">
+      <div className="sticky top-0 z-10 bg-white shadow-sm">
         <div className="px-4 sm:px-6 lg:px-8 py-4">
           {/* Breadcrumb */}
           <div className="flex items-center gap-2 text-sm text-gray-500 mb-2">
@@ -599,9 +832,14 @@ export default function AdminUserDetailPage() {
                 )}
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-gray-900">
-                  {user.full_name || "No name"}
-                </h1>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h1 className="text-2xl font-bold text-gray-900">
+                    {user.full_name || "No name"}
+                  </h1>
+                  {user.role === "worker" && stats.rating_stats && (
+                    <RatingDisplay stats={stats.rating_stats} />
+                  )}
+                </div>
                 <div className="flex items-center gap-2 text-sm text-gray-500">
                   <Mail className="w-4 h-4" />
                   <span>{user.email}</span>
@@ -654,7 +892,7 @@ export default function AdminUserDetailPage() {
           </div>
 
           {/* Tabs */}
-          <div className="flex gap-4 mt-4  overflow-x-auto pb-1">
+          <div className="flex gap-4 mt-4 overflow-x-auto pb-1">
             <button
               onClick={() => setActiveTab("overview")}
               className={`px-3 py-2 text-sm font-medium transition border-b-2 ${
@@ -667,6 +905,23 @@ export default function AdminUserDetailPage() {
             </button>
             {user.role === "worker" && (
               <>
+                <button
+                  onClick={() => setActiveTab("ratings")}
+                  className={`px-3 py-2 text-sm font-medium transition border-b-2 flex items-center gap-1 ${
+                    activeTab === "ratings"
+                      ? "text-blue-600 border-blue-600"
+                      : "text-gray-500 border-transparent hover:text-gray-700"
+                  }`}
+                >
+                  <Star className="w-4 h-4" />
+                  Ratings
+                  {stats.rating_stats &&
+                    stats.rating_stats.totalRatings > 0 && (
+                      <span className="ml-1 px-1.5 py-0.5 bg-blue-100 text-blue-600 text-xs rounded-full">
+                        {stats.rating_stats.totalRatings}
+                      </span>
+                    )}
+                </button>
                 <button
                   onClick={() => setActiveTab("verification")}
                   className={`px-3 py-2 text-sm font-medium transition border-b-2 ${
@@ -854,31 +1109,213 @@ export default function AdminUserDetailPage() {
                         </span>
                       </div>
                     )}
-                  </div>
-                </div>
-
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                    Actions
-                  </h3>
-                  <div className="space-y-2">
-                    <Link
-                      href={`/admin/users/${user.id}/edit`}
-                      className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center justify-center gap-2"
-                    >
-                      <Edit className="w-4 h-4" />
-                      Edit User
-                    </Link>
-                    <Link
-                      href={`/admin/messages?user=${user.id}`}
-                      className="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition flex items-center justify-center gap-2"
-                    >
-                      <MessageSquare className="w-4 h-4" />
-                      Send Message
-                    </Link>
+                    {user.role === "worker" && stats.rating_stats && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-500">Rating</span>
+                        <RatingDisplay stats={stats.rating_stats} />
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Ratings Tab (Worker only) */}
+          {activeTab === "ratings" && user.role === "worker" && (
+            <div className="space-y-6">
+              {loadingRatings ? (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-600 border-t-transparent mx-auto mb-3"></div>
+                  <p className="text-gray-500">Loading ratings...</p>
+                </div>
+              ) : stats.rating_stats && stats.rating_stats.totalRatings > 0 ? (
+                <>
+                  {/* Rating Summary Card */}
+                  <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-xl p-6 border border-amber-200">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      {/* Left - Overall Rating */}
+                      <div className="text-center">
+                        {stats.rating_stats.isEstablished &&
+                        stats.rating_stats.displayedRating ? (
+                          <>
+                            <div className="text-5xl font-bold text-amber-700 mb-2">
+                              {stats.rating_stats.displayedRating}
+                            </div>
+                            <div className="flex items-center justify-center gap-1 mb-2">
+                              {[...Array(5)].map((_, i) => (
+                                <Star
+                                  key={i}
+                                  className={`w-5 h-5 ${
+                                    i <
+                                    Math.floor(
+                                      //@ts-ignore
+                                      stats.rating_stats.displayedRating!
+                                    )
+                                      ? "fill-amber-500 text-amber-500"
+                                      : "text-gray-300"
+                                  }`}
+                                />
+                              ))}
+                            </div>
+                            <p className="text-sm text-amber-600">
+                              out of 5 stars
+                            </p>
+                          </>
+                        ) : (
+                          <>
+                            <div className="text-3xl font-bold text-gray-700 mb-2">
+                              {stats.rating_stats.statusText}
+                            </div>
+                            <div className="flex items-center justify-center gap-1 mb-2">
+                              <Star className="w-5 h-5 text-gray-400" />
+                            </div>
+                            <p className="text-sm text-gray-500">
+                              Need {5 - stats.rating_stats.totalRatings} more
+                              ratings
+                            </p>
+                          </>
+                        )}
+                      </div>
+
+                      {/* Middle - Stats */}
+                      <div className="text-center border-l border-r border-amber-200">
+                        <div className="text-3xl font-bold text-gray-900 mb-2">
+                          {stats.rating_stats.totalRatings}
+                        </div>
+                        <p className="text-sm text-gray-600 flex items-center justify-center gap-1">
+                          <Users className="w-4 h-4" />
+                          Total Ratings
+                        </p>
+                        {stats.rating_stats.totalRatings >= 10 && (
+                          <div className="mt-2 flex items-center justify-center gap-1 text-xs text-green-600 bg-green-50 rounded-full px-2 py-1 inline-flex">
+                            <TrendingUp className="w-3 h-3" />
+                            Lowest rating excluded
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Right - Distribution */}
+                      <div className="space-y-2">
+                        {[5, 4, 3, 2, 1].map((star) => {
+                          const count =
+                            stats.rating_stats?.ratingDistribution?.[
+                              star as keyof typeof stats.rating_stats.ratingDistribution
+                            ] ?? 0;
+                          const percentage =
+                            //@ts-ignore
+                            stats?.rating_stats?.totalRatings > 0
+                              ? //@ts-ignore
+
+                                (count / stats?.rating_stats?.totalRatings) *
+                                100
+                              : 0;
+
+                          return (
+                            <div key={star} className="flex items-center gap-2">
+                              <div className="w-8 text-sm font-medium text-gray-600">
+                                {star} ★
+                              </div>
+                              <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-amber-400 rounded-full"
+                                  style={{ width: `${percentage}%` }}
+                                />
+                              </div>
+                              <div className="w-8 text-xs text-gray-500 text-right">
+                                {count}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Recent Reviews */}
+                  {stats.rating_stats.recentRatings.length > 0 && (
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                        <ThumbsUp className="w-5 h-5 text-purple-600" />
+                        Recent Reviews
+                      </h3>
+                      <div className="space-y-4">
+                        {stats.rating_stats.recentRatings.map((review) => (
+                          <div
+                            key={review.id}
+                            className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md transition"
+                          >
+                            <div className="flex items-start gap-3">
+                              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-gray-200 to-gray-300 flex items-center justify-center overflow-hidden flex-shrink-0">
+                                {review.reviewer_avatar ? (
+                                  <img
+                                    src={review.reviewer_avatar}
+                                    alt={review.reviewer_name}
+                                    className="w-full h-full object-cover"
+                                  />
+                                ) : (
+                                  <span className="text-sm font-bold text-gray-600">
+                                    {review.reviewer_name
+                                      .charAt(0)
+                                      .toUpperCase()}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex-1">
+                                <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
+                                  <span className="font-medium text-gray-900">
+                                    {review.reviewer_name}
+                                  </span>
+                                  <div className="flex items-center gap-1">
+                                    {[...Array(5)].map((_, i) => (
+                                      <Star
+                                        key={i}
+                                        className={`w-3.5 h-3.5 ${
+                                          i < review.rating
+                                            ? "fill-amber-500 text-amber-500"
+                                            : "text-gray-300"
+                                        }`}
+                                      />
+                                    ))}
+                                  </div>
+                                </div>
+
+                                {review.job_title && (
+                                  <div className="mb-2">
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-50 text-purple-700 text-xs rounded-full border border-purple-200">
+                                      <Briefcase className="w-3 h-3" />
+                                      {review.job_title}
+                                    </span>
+                                  </div>
+                                )}
+
+                                {review.review_text && (
+                                  <p className="text-sm text-gray-700 mt-2 bg-gray-50 p-3 rounded-lg">
+                                    "{review.review_text}"
+                                  </p>
+                                )}
+                                <p className="text-xs text-gray-400 mt-2">
+                                  {formatDate(review.created_at)}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
+                  <Star className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-1">
+                    No ratings yet
+                  </h3>
+                  <p className="text-sm text-gray-500">
+                    This worker hasn't received any ratings yet
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
@@ -1188,7 +1625,6 @@ export default function AdminUserDetailPage() {
           {/* Insurance Tab (Worker only) */}
           {activeTab === "insurance" && user.role === "worker" && (
             <div className="space-y-6">
-              {/* En-tête avec statut */}
               <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                 <div className="flex justify-between items-start mb-6">
                   <div>
@@ -1211,7 +1647,6 @@ export default function AdminUserDetailPage() {
                   </span>
                 </div>
 
-                {/* Statut de vérification */}
                 <div className="bg-gray-50 rounded-xl p-6 mb-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
@@ -1245,7 +1680,6 @@ export default function AdminUserDetailPage() {
                   </div>
                 </div>
 
-                {/* Document d'assurance */}
                 <div className="mb-6">
                   <h4 className="font-medium text-gray-900 mb-3">
                     Insurance Document
@@ -1281,7 +1715,6 @@ export default function AdminUserDetailPage() {
                           </a>
                         </div>
 
-                        {/* Informations sur le document */}
                         <div className="mt-4 text-xs text-gray-500">
                           <p>
                             File name: {user.insurance_url.split("/").pop()}
@@ -1308,7 +1741,6 @@ export default function AdminUserDetailPage() {
                   </div>
                 </div>
 
-                {/* Actions de vérification */}
                 {user.insurance_url && (
                   <div className="flex gap-3">
                     {!user.insurance_verified ? (
@@ -1352,7 +1784,6 @@ export default function AdminUserDetailPage() {
                 )}
               </div>
 
-              {/* Informations supplémentaires sur l'assurance */}
               <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">
                   Insurance Requirements
@@ -1520,6 +1951,7 @@ export default function AdminUserDetailPage() {
           </div>
         </div>
       )}
+
       {/* Insurance Verification Modal */}
       {showInsuranceModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">

@@ -16,6 +16,13 @@ import {
   BadgeCheck,
   Briefcase,
   Star,
+  Clock,
+  MapPin,
+  Calendar,
+  MessageCircle,
+  Award,
+  Shield,
+  ThumbsUp,
 } from "lucide-react";
 import { useToast } from "@/contexts/ToastContext";
 import { Application } from "./types";
@@ -31,6 +38,8 @@ import { WorkerProfileCard } from "./components/shared/worker/WorkerProfileCard"
 import { DisputeModal } from "./components/shared/dispute/DisputeModal";
 import { useIconsAndBadges } from "./hooks/useIconsAndBadges";
 import { WorkerActions } from "./components/shared/application/WorkerActions";
+import { RatingSummary } from "./components/shared/rate/RatingSummary";
+import { RateButton } from "./components/shared/rate/RateButton";
 
 export default function ApplicationDetailPage() {
   const [application, setApplication] = useState<Application | null>(null);
@@ -46,6 +55,7 @@ export default function ApplicationDetailPage() {
   const [isFavorite, setIsFavorite] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [showDisputeModal, setShowDisputeModal] = useState(false);
+  const [hasRated, setHasRated] = useState(false);
 
   const params = useParams();
   const router = useRouter();
@@ -65,6 +75,26 @@ export default function ApplicationDetailPage() {
     };
     getCurrentUser();
   }, []);
+
+  // Check if user has rated this job
+  const checkIfHasRated = useCallback(async () => {
+    if (!application?.job_id || !currentUser?.id) return;
+
+    try {
+      const { data: existingRate, error } = await supabase
+        .from("rates")
+        .select("id")
+        .eq("job_id", application.job_id)
+        .eq("reviewer_id", currentUser.id)
+        .maybeSingle();
+
+      console.log("Check rating result:", { existingRate, error });
+      setHasRated(!!existingRate);
+    } catch (error) {
+      console.error("Error checking rating status:", error);
+      setHasRated(false);
+    }
+  }, [application?.job_id, currentUser?.id]);
 
   // Fetch application details
   const fetchApplicationDetails = async () => {
@@ -99,6 +129,8 @@ export default function ApplicationDetailPage() {
         .eq("status", "completed");
       if (countError) throw countError;
 
+      console.log("Job status:", jobData.status);
+
       setCompletedJobsCount(count || 0);
       setApplication({ ...appData, job: jobData, worker: workerData });
     } catch (error) {
@@ -112,6 +144,12 @@ export default function ApplicationDetailPage() {
   useEffect(() => {
     fetchApplicationDetails();
   }, [applicationId]);
+
+  useEffect(() => {
+    if (application && currentUser) {
+      checkIfHasRated();
+    }
+  }, [application, currentUser, checkIfHasRated]);
 
   // Actions
   const handleAccept = async () => {
@@ -204,10 +242,14 @@ export default function ApplicationDetailPage() {
     setIsShareOpen(false);
   };
 
-  // Loading state
+  const handleRatingSuccess = () => {
+    toast.success("Thank you for your rating!");
+    setHasRated(true);
+    fetchApplicationDetails();
+  };
+
   if (loading) return <LoadingState />;
 
-  // Error state
   if (!application) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center p-4">
@@ -365,12 +407,19 @@ export default function ApplicationDetailPage() {
               onDispute={handleOpenDisputeModal}
               isUpdatingDispute={dispute.isUpdating}
               existingDisputeStatus={dispute.existingDisputeStatus}
-              status={application.status}
+              applicationStatus={application.status}
+              jobStatus={application.job?.status}
               onAccept={handleAccept}
               onReject={handleReject}
               processing={processing}
               showRejectConfirm={showRejectConfirm}
               setShowRejectConfirm={setShowRejectConfirm}
+              jobId={application.job_id}
+              workerId={application.worker_id}
+              workerName={application.worker?.full_name || "the worker"}
+              jobTitle={application.job?.title || "this job"}
+              hasRated={hasRated}
+              onRatingSuccess={handleRatingSuccess}
             />
           </div>
         </div>
@@ -405,7 +454,7 @@ export default function ApplicationDetailPage() {
   );
 }
 
-// Composant pour la carte résumé du worker
+// Composant pour la carte résumé du worker - Version améliorée
 function WorkerSummaryCard({
   worker,
   completedJobsCount,
@@ -414,22 +463,50 @@ function WorkerSummaryCard({
   onDispute,
   isUpdatingDispute,
   existingDisputeStatus,
-  status,
+  applicationStatus,
+  jobStatus,
   onAccept,
   onReject,
   processing,
   showRejectConfirm,
   setShowRejectConfirm,
+  jobId,
+  workerId,
+  workerName,
+  jobTitle,
+  hasRated,
+  onRatingSuccess,
 }: any) {
-  const { formatCurrency } = useFormatters();
   const { getTradeCategoryIcon } = useIconsAndBadges();
 
+  const getMemberSince = () => {
+    if (worker?.created_at) {
+      const date = new Date(worker.created_at);
+      return date.toLocaleDateString("en-US", {
+        month: "long",
+        year: "numeric",
+      });
+    }
+    return "Recently";
+  };
+
+  console.log("WorkerSummaryCard props:", {
+    applicationStatus,
+    jobStatus,
+    hasRated,
+    showRateButton: jobStatus === "completed" && !hasRated,
+  });
+
   return (
-    <div className="bg-white rounded-2xl shadow-sm border overflow-hidden sticky top-24">
-      <div className="p-6 bg-gradient-to-r from-purple-600 to-purple-600">
-        <div className="flex items-center gap-4">
+    <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden sticky top-24 transition-all duration-300 hover:shadow-xl">
+      {/* Header avec gradient et animation */}
+      <div className="relative p-6 bg-gradient-to-r from-purple-600 via-purple-500 to-indigo-600">
+        <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2"></div>
+        <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/10 rounded-full translate-y-1/2 -translate-x-1/2"></div>
+
+        <div className="relative flex items-center gap-4">
           <div className="relative">
-            <div className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center text-white text-2xl font-bold border-2 border-white overflow-hidden backdrop-blur-sm">
+            <div className="w-20 h-20 rounded-full bg-white/20 flex items-center justify-center text-white text-2xl font-bold border-4 border-white/50 overflow-hidden shadow-lg">
               {worker?.avatar_url ? (
                 <img
                   src={worker.avatar_url}
@@ -441,45 +518,131 @@ function WorkerSummaryCard({
               )}
             </div>
             {worker?.verified && (
-              <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-green-500 rounded-full border-2 border-white flex items-center justify-center">
-                <BadgeCheck className="w-3 h-3 text-white" />
+              <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-green-500 rounded-full border-2 border-white flex items-center justify-center shadow-md">
+                <BadgeCheck className="w-3.5 h-3.5 text-white" />
+              </div>
+            )}
+            {worker?.level === "master" && (
+              <div className="absolute -top-1 -left-1 w-6 h-6 bg-yellow-500 rounded-full border-2 border-white flex items-center justify-center shadow-md">
+                <Award className="w-3.5 h-3.5 text-white" />
               </div>
             )}
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="text-lg font-bold text-white truncate">
+            <h3 className="text-xl font-bold text-white truncate mb-1">
               {worker?.full_name}
             </h3>
-            <p className="text-purple-100 text-sm flex items-center gap-1">
+            <p className="text-purple-100 text-sm flex items-center gap-1.5 mb-2">
               {getTradeCategoryIcon(worker?.trade_category)}
-              {worker?.job_title || "Professional"}
+              <span>{worker?.job_title || "Professional"}</span>
+              {worker?.level && (
+                <>
+                  <span className="w-1 h-1 bg-purple-300 rounded-full"></span>
+                  <span className="capitalize">{worker.level}</span>
+                </>
+              )}
+              {worker?.insured && (
+                <>
+                  <span className="w-1 h-1 bg-purple-300 rounded-full"></span>
+                  <Shield className="w-3 h-3" />
+                  <span>Insured</span>
+                </>
+              )}
             </p>
+            <div className="flex items-center gap-3 text-xs text-purple-200">
+              <div className="flex items-center gap-1">
+                <MapPin className="w-3 h-3" />
+                <span>{worker?.city || "Location not specified"}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <Calendar className="w-3 h-3" />
+                <span>Member since {getMemberSince()}</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="p-6">
-        <div className="grid grid-cols-2 gap-3 mb-6">
-          <div className="text-center p-3 bg-gray-50 rounded-xl">
-            <div className="text-2xl font-bold text-gray-900">
+      {/* Contenu */}
+      <div className="p-5">
+        {/* Stats avec animations */}
+        <div className="grid grid-cols-2 gap-3 mb-5">
+          <div className="group relative text-center p-3 bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl hover:shadow-md transition-all duration-200 cursor-default">
+            <div className="text-2xl font-bold text-gray-900 mb-1 group-hover:scale-110 transition-transform">
               {completedJobsCount}
             </div>
-            <div className="text-xs text-gray-600 flex items-center justify-center gap-1">
-              <Briefcase className="w-3 h-3" /> Jobs Done
+            <div className="text-xs text-gray-500 flex items-center justify-center gap-1">
+              <Briefcase className="w-3 h-3" /> Jobs Completed
             </div>
           </div>
-          <div className="text-center p-3 bg-gray-50 rounded-xl">
-            <div className="text-2xl font-bold text-gray-900">
-              {worker?.rating?.toFixed(1) || "New"}
+          <div className="group relative text-center p-3 bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl hover:shadow-md transition-all duration-200 cursor-default">
+            <div className="text-2xl font-bold text-gray-900 mb-1 group-hover:scale-110 transition-transform">
+              {worker?.response_rate || "100"}%
             </div>
-            <div className="text-xs text-gray-600 flex items-center justify-center gap-1">
-              <Star className="w-3 h-3" /> Rating
+            <div className="text-xs text-gray-500 flex items-center justify-center gap-1">
+              <MessageCircle className="w-3 h-3" /> Response Rate
             </div>
           </div>
         </div>
 
+        {/* Badges de compétences */}
+        {worker?.skills && worker.skills.length > 0 && (
+          <div className="mb-5">
+            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+              Skills & Expertise
+            </h4>
+            <div className="flex flex-wrap gap-1.5">
+              {worker.skills.slice(0, 3).map((skill: string, i: number) => (
+                <span
+                  key={i}
+                  className="px-2 py-1 bg-purple-50 text-purple-700 text-xs rounded-lg border border-purple-100"
+                >
+                  {skill}
+                </span>
+              ))}
+              {worker.skills.length > 3 && (
+                <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-lg">
+                  +{worker.skills.length - 3} more
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Rating Summary Component avec animation */}
+        {worker?.id && (
+          <div className="mb-5 animate-fadeIn">
+            <div className="flex items-center gap-2 mb-2">
+              <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                Worker Rating
+              </h4>
+            </div>
+            <RatingSummary userId={worker.id} showDetails={true} />
+          </div>
+        )}
+
+        {/* Rate Button avec animation */}
+        {jobStatus === "completed" && (
+          <div className="mb-4 animate-slideUp">
+            <RateButton
+              jobId={jobId}
+              workerId={workerId}
+              workerName={workerName}
+              jobTitle={jobTitle}
+              jobStatus={jobStatus}
+              hasRated={hasRated}
+              onRatingSuccess={onRatingSuccess}
+            />
+          </div>
+        )}
+
+        {/* Divider */}
+        <div className="border-t border-gray-100 my-4"></div>
+
+        {/* Worker Actions */}
         <WorkerActions
-          status={status}
+          status={applicationStatus}
           onAccept={onAccept}
           onReject={onReject}
           processing={processing}

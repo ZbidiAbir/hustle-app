@@ -134,7 +134,7 @@ export default function CustomerChatPage() {
 
         // Verify user is the owner
         if (jobData.customer_id !== user.id) {
-          router.push("/customer/my-jobs");
+          router.push("/customer/dashboard/my-jobs");
           return;
         }
 
@@ -407,7 +407,7 @@ export default function CustomerChatPage() {
           <h2 className="text-2xl font-bold text-gray-800 mb-2">Oops!</h2>
           <p className="text-red-600 mb-6">{error || "Job not found"}</p>
           <Link
-            href="/customer/my-jobs"
+            href="/customer/dashboard/my-jobs"
             className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-800 font-medium transition-colors"
           >
             <svg

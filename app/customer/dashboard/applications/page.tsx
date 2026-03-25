@@ -22,7 +22,12 @@ import {
   TrendingUp,
   X,
   AlertCircle,
+  ThumbsUp,
 } from "lucide-react";
+
+import { useToast } from "@/contexts/ToastContext";
+import { RatingSummary } from "./[id]/components/shared/rate/RatingSummary";
+import { RateButton } from "./[id]/components/shared/rate/RateButton";
 
 // Définir le type Job localement pour éviter les problèmes d'import
 type Job = {
@@ -66,6 +71,7 @@ type Application = {
     country?: string;
     business_city?: string;
     business_country?: string;
+    rating?: number;
   };
 };
 
@@ -78,6 +84,44 @@ type Stats = {
   accepted: number;
   rejected: number;
 };
+
+// Composant pour afficher la note avec étoiles
+function WorkerRatingDisplay({
+  rating,
+  size = "sm",
+}: {
+  rating?: number | null;
+  size?: "sm" | "md" | "lg";
+}) {
+  if (!rating || rating === 0) {
+    return (
+      <div className="flex items-center gap-1 px-2 py-0.5 bg-gray-100 rounded-full">
+        <Star className="w-3 h-3 text-gray-400" />
+        <span className="text-xs text-gray-500">New</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1 px-2 py-0.5 bg-amber-50 rounded-full border border-amber-200">
+      <div className="flex items-center gap-0.5">
+        {[...Array(5)].map((_, i) => (
+          <Star
+            key={i}
+            className={`w-3 h-3 ${
+              i < Math.floor(rating)
+                ? "fill-amber-500 text-amber-500"
+                : "text-gray-300"
+            }`}
+          />
+        ))}
+      </div>
+      <span className="text-xs font-semibold text-amber-700">
+        {rating.toFixed(1)}
+      </span>
+    </div>
+  );
+}
 
 export default function AllApplicationsPage() {
   const [applications, setApplications] = useState<Application[]>([]);
@@ -94,26 +138,40 @@ export default function AllApplicationsPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
-  const router = useRouter();
+  const [ratedJobs, setRatedJobs] = useState<Set<string>>(new Set());
 
-  // Fonction pour formater le prix avec débogage
+  const router = useRouter();
+  const toast = useToast();
+
+  // Vérifier les ratings existants pour l'utilisateur
+  const checkRatedJobs = useCallback(
+    async (userId: string, jobsToCheck: string[]) => {
+      if (!userId || jobsToCheck.length === 0) return;
+
+      try {
+        const { data, error } = await supabase
+          .from("rates")
+          .select("job_id")
+          .eq("reviewer_id", userId)
+          .in("job_id", jobsToCheck);
+
+        if (error) throw error;
+
+        const ratedSet = new Set(data?.map((r) => r.job_id) || []);
+        setRatedJobs(ratedSet);
+      } catch (error) {
+        console.error("Error checking rated jobs:", error);
+      }
+    },
+    []
+  );
+
+  // Fonction pour formater le prix
   const formatPrice = (job?: Job) => {
     if (!job) return "Price TBD";
 
-    console.log("Job data:", {
-      id: job.id,
-      title: job.title,
-      pay_type: job.pay_type,
-      hourly_rate: job.hourly_rate,
-      fixed_rate: job.fixed_rate,
-      min_rate: job.min_rate,
-      max_rate: job.max_rate,
-      price: job.price,
-    });
-
     const payType = job.pay_type?.toLowerCase();
 
-    // Hourly
     if (
       job.hourly_rate &&
       (payType === "hourly" ||
@@ -130,7 +188,6 @@ export default function AllApplicationsPage() {
       );
     }
 
-    // Fixed
     if (
       job.fixed_rate &&
       (payType === "fixed" || payType === "fix" || payType?.includes("fixed"))
@@ -142,7 +199,6 @@ export default function AllApplicationsPage() {
       }).format(job.fixed_rate);
     }
 
-    // Range
     if (
       job.min_rate &&
       job.max_rate &&
@@ -159,7 +215,6 @@ export default function AllApplicationsPage() {
       }).format(job.max_rate)}`;
     }
 
-    // Fallback intelligent
     if (job.hourly_rate) {
       return (
         new Intl.NumberFormat("en-US", {
@@ -197,12 +252,10 @@ export default function AllApplicationsPage() {
   const filteredApplications = useMemo(() => {
     let filtered = [...applications];
 
-    // Apply status filter
     if (statusFilter !== "all") {
       filtered = filtered.filter((app) => app.status === statusFilter);
     }
 
-    // Apply search filter
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(
@@ -218,19 +271,16 @@ export default function AllApplicationsPage() {
       );
     }
 
-    // Apply sorting
     filtered.sort((a, b) => {
-      // Fonction pour obtenir le prix à comparer
       const getComparablePrice = (job?: Job) => {
         if (!job) return 0;
-
         switch (job.pay_type) {
           case "Fixed":
             return job.fixed_rate || 0;
           case "Hourly":
             return job.hourly_rate || 0;
           case "Range":
-            return job.max_rate || 0; // Utiliser le max pour le tri
+            return job.max_rate || 0;
           default:
             return job.price || 0;
         }
@@ -275,7 +325,6 @@ export default function AllApplicationsPage() {
           return;
         }
 
-        // Récupérer les jobs avec TOUS les champs de prix
         const { data: jobsData, error: jobsError } = await supabase
           .from("jobs")
           .select(
@@ -340,7 +389,8 @@ export default function AllApplicationsPage() {
             city,
             country,
             business_city,
-            business_country
+            business_country,
+            rating
           `
           )
           .in("id", workerIds);
@@ -372,6 +422,15 @@ export default function AllApplicationsPage() {
 
         setApplications(combinedData);
         setStats({ total: combinedData.length, pending, accepted, rejected });
+
+        // Vérifier les jobs déjà notés
+        const completedJobs = combinedData
+          .filter((app) => app.job?.status === "completed")
+          .map((app) => app.job_id);
+
+        if (completedJobs.length > 0) {
+          await checkRatedJobs(user.id, completedJobs);
+        }
       } catch (error: any) {
         console.error("Error fetching applications:", error);
         setFetchError(
@@ -382,12 +441,18 @@ export default function AllApplicationsPage() {
         setIsRefreshing(false);
       }
     },
-    [router]
+    [router, checkRatedJobs]
   );
 
   useEffect(() => {
     fetchAllApplications();
   }, [fetchAllApplications]);
+
+  const handleRatingSuccess = (jobId: string) => {
+    toast.success("Thank you for your rating!");
+    setRatedJobs((prev) => new Set(prev).add(jobId));
+    fetchAllApplications();
+  };
 
   const getStatusConfig = (status: string) => {
     const configs = {
@@ -399,7 +464,6 @@ export default function AllApplicationsPage() {
         border: "border-amber-200",
         iconColor: "text-amber-500",
         gradient: "from-amber-500 to-orange-500",
-        lightBg: "bg-amber-50/50",
       },
       accepted: {
         icon: CheckCircle,
@@ -409,7 +473,6 @@ export default function AllApplicationsPage() {
         border: "border-emerald-200",
         iconColor: "text-emerald-500",
         gradient: "from-emerald-500 to-teal-500",
-        lightBg: "bg-emerald-50/50",
       },
       rejected: {
         icon: XCircle,
@@ -419,7 +482,6 @@ export default function AllApplicationsPage() {
         border: "border-rose-200",
         iconColor: "text-rose-500",
         gradient: "from-rose-500 to-pink-500",
-        lightBg: "bg-rose-50/50",
       },
     };
     return configs[status as keyof typeof configs] || configs.pending;
@@ -448,53 +510,23 @@ export default function AllApplicationsPage() {
     });
   };
 
-  const StatCard = ({ title, value, icon: Icon, color, trend }: any) => {
-    const colors = {
-      blue: {
-        bg: "bg-blue-50",
-        text: "text-blue-600",
-        icon: "text-blue-600",
-        gradient: "from-blue-500 to-indigo-500",
-      },
-      yellow: {
-        bg: "bg-amber-50",
-        text: "text-amber-600",
-        icon: "text-amber-600",
-        gradient: "from-amber-500 to-orange-500",
-      },
-      green: {
-        bg: "bg-emerald-50",
-        text: "text-emerald-600",
-        icon: "text-emerald-600",
-        gradient: "from-emerald-500 to-teal-500",
-      },
-      red: {
-        bg: "bg-rose-50",
-        text: "text-rose-600",
-        icon: "text-rose-600",
-        gradient: "from-rose-500 to-pink-500",
-      },
+  const StatCard = ({ title, value, icon: Icon, color }: any) => {
+    const colorClasses: any = {
+      purple: "bg-purple-50 text-purple-600",
+      yellow: "bg-amber-50 text-amber-600",
+      green: "bg-emerald-50 text-emerald-600",
+      red: "bg-rose-50 text-rose-600",
     };
 
     return (
       <div className="group relative bg-white rounded-2xl shadow-sm border border-gray-100 p-6 hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
-        <div
-          className={`absolute inset-0 bg-linear-to-br  opacity-0 group-hover:opacity-5 rounded-2xl transition-opacity duration-300`}
-        />
-
         <div className="relative">
           <div className="flex items-center justify-between mb-4">
             <div
-              className={`p-3 rounded-xl group-hover:scale-110 transition-transform duration-300`}
+              className={`p-3 rounded-xl group-hover:scale-110 transition-transform duration-300 ${colorClasses[color]}`}
             >
-              <Icon className={`w-5 h-5 `} />
+              <Icon className="w-5 h-5" />
             </div>
-            {trend && (
-              <div className="flex items-center gap-1 text-xs text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">
-                <TrendingUp className="w-3 h-3" />
-                <span>{trend}%</span>
-              </div>
-            )}
           </div>
           <h3 className="text-sm font-medium text-gray-500 mb-1">{title}</h3>
           <p className="text-3xl font-bold text-gray-900">{value}</p>
@@ -533,7 +565,7 @@ export default function AllApplicationsPage() {
                 setStatusFilter("all");
                 setSortBy("newest");
               }}
-              className="inline-flex items-center gap-2 px-6 py-3 bg-linear-to-r from-purple-600 to-pink-600 text-white font-medium rounded-xl hover:from-purple-700 hover:to-pink-700 transition-all duration-300 shadow-lg shadow-purple-500/25 hover:shadow-xl hover:shadow-purple-500/30 hover:-translate-y-0.5"
+              className="inline-flex items-center gap-2 px-6 py-3 bg-linear-to-r from-purple-600 to-pink-600 text-white font-medium rounded-xl hover:from-purple-700 hover:to-pink-700 transition-all duration-300 shadow-lg shadow-purple-500/25"
             >
               <X className="w-4 h-4" />
               Clear all filters
@@ -592,8 +624,6 @@ export default function AllApplicationsPage() {
       <div className="mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header Section */}
         <div className="relative mb-8">
-          <div className="absolute inset-0  rounded-3xl" />
-
           <div className="relative flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div>
               <div className="flex items-center gap-3 mb-2">
@@ -627,6 +657,34 @@ export default function AllApplicationsPage() {
               </button>
             </div>
           </div>
+        </div>
+
+        {/* Stats Cards */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+          <StatCard
+            title="Total Applications"
+            value={stats.total}
+            icon={Users}
+            color="purple"
+          />
+          <StatCard
+            title="Pending"
+            value={stats.pending}
+            icon={Clock}
+            color="yellow"
+          />
+          <StatCard
+            title="Accepted"
+            value={stats.accepted}
+            icon={CheckCircle}
+            color="green"
+          />
+          <StatCard
+            title="Rejected"
+            value={stats.rejected}
+            icon={XCircle}
+            color="red"
+          />
         </div>
 
         {/* Filters Bar */}
@@ -727,35 +785,26 @@ export default function AllApplicationsPage() {
             </span>{" "}
             {filteredApplications.length === 1 ? "application" : "applications"}
           </p>
-          {filteredApplications.length > 0 && (
-            <p className="text-sm text-gray-500">
-              Last updated {formatDate(new Date().toISOString())}
-            </p>
-          )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredApplications.map((app, index) => {
             const statusConfig = getStatusConfig(app.status);
             const StatusIcon = statusConfig.icon;
+            const isJobCompleted = app.job?.status === "completed";
+            const hasUserRated = ratedJobs.has(app.job_id);
 
             return (
               <div
                 key={app.id}
-                className="group relative bg-white rounded-2xl shadow-sm border border-gray-100 hover:shadow-xl overflow-hidden"
-                style={{
-                  animationDelay: `${index * 100}ms`,
-                }}
+                className="group relative bg-white rounded-2xl shadow-sm border border-gray-100 hover:shadow-xl overflow-hidden transition-all duration-300"
               >
                 <div
                   className={`absolute top-0 left-0 right-0 h-1.5 bg-linear-to-r ${statusConfig.gradient}`}
                 />
 
-                <div
-                  className={`absolute inset-0 bg-linear-to-br ${statusConfig.gradient} opacity-0 group-hover:opacity-5 transition-opacity duration-300`}
-                />
-
                 <div className="relative p-6">
+                  {/* Header with User Info and Rating */}
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex items-center gap-3">
                       <div className="relative">
@@ -779,9 +828,13 @@ export default function AllApplicationsPage() {
                         )}
                       </div>
                       <div>
-                        <h3 className="font-bold text-gray-900 group-hover:text-purple-600 transition-colors">
-                          {app.worker?.full_name}
-                        </h3>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="font-bold text-gray-900 group-hover:text-purple-600 transition-colors">
+                            {app.worker?.full_name}
+                          </h3>
+                          {/* Rating Display à côté du nom */}
+                          <WorkerRatingDisplay rating={app.worker?.rating} />
+                        </div>
                         <p className="text-xs text-gray-500 mt-0.5">
                           {app.worker?.job_title ||
                             app.worker?.trade_category ||
@@ -809,6 +862,17 @@ export default function AllApplicationsPage() {
                     </div>
                   </div>
 
+                  {/* Rating Summary */}
+                  {app.worker?.id && (
+                    <div className="mb-4">
+                      <RatingSummary
+                        userId={app.worker.id}
+                        showDetails={false}
+                      />
+                    </div>
+                  )}
+
+                  {/* Badges */}
                   <div className="flex flex-wrap items-center gap-2 mb-4">
                     {app.worker?.hourly_rate && (
                       <div className="flex items-center gap-1 px-2 py-1 bg-purple-50 rounded-lg">
@@ -829,16 +893,6 @@ export default function AllApplicationsPage() {
                       </div>
                     )}
 
-                    {app.worker?.loyalty_points &&
-                      app.worker.loyalty_points > 0 && (
-                        <div className="flex items-center gap-1 px-2 py-1 bg-amber-50 rounded-lg">
-                          <Star className="w-3 h-3 text-amber-600 fill-amber-600" />
-                          <span className="text-xs font-medium text-amber-700">
-                            {app.worker.loyalty_points} pts
-                          </span>
-                        </div>
-                      )}
-
                     {(app.worker?.city || app.worker?.business_city) && (
                       <div className="flex items-center gap-1 px-2 py-1 bg-gray-50 rounded-lg">
                         <MapPin className="w-3 h-3 text-gray-600" />
@@ -849,6 +903,7 @@ export default function AllApplicationsPage() {
                     )}
                   </div>
 
+                  {/* Skills */}
                   {app.worker?.skills && app.worker.skills.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 mb-4">
                       {app.worker.skills.slice(0, 4).map((skill, i) => (
@@ -867,17 +922,22 @@ export default function AllApplicationsPage() {
                     </div>
                   )}
 
+                  {/* Job Info */}
                   <div className="bg-linear-to-br from-gray-50 to-gray-100/50 rounded-xl p-4 mb-4 border border-gray-100">
-                    <h4 className="font-semibold text-gray-900 text-sm mb-2 line-clamp-1">
-                      {app.job?.title}
-                    </h4>
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="font-semibold text-gray-900 text-sm line-clamp-1 flex-1">
+                        {app.job?.title}
+                      </h4>
+                      <span className="px-2 py-1 text-xs rounded-full bg-gray-200 text-gray-700 ml-2">
+                        {app.job?.status}
+                      </span>
+                    </div>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <span className="px-2 py-1 bg-white rounded-lg text-xs font-medium text-purple-700 border border-purple-200">
                           {app.job?.category}
                         </span>
-
-                        <div className="text-right ml-3">
+                        <div className="text-right">
                           <p className="text-xl font-bold text-gray-900">
                             {formatPrice(app?.job)}
                           </p>
@@ -900,10 +960,26 @@ export default function AllApplicationsPage() {
                     </div>
                   </div>
 
+                  {/* Rate Button - Only for completed jobs */}
+                  {isJobCompleted && (
+                    <div className="mb-4">
+                      <RateButton
+                        jobId={app.job_id}
+                        workerId={app.worker?.id || ""}
+                        workerName={app.worker?.full_name || "the worker"}
+                        jobTitle={app.job?.title || "this job"}
+                        jobStatus={app.job?.status || "completed"}
+                        hasRated={hasUserRated}
+                        onRatingSuccess={() => handleRatingSuccess(app.job_id)}
+                      />
+                    </div>
+                  )}
+
+                  {/* Action Buttons */}
                   <div className="flex gap-2">
                     <Link
                       href={`/customer/dashboard/chat/${app.job_id}?worker=${app.worker_id}`}
-                      className="flex-1 px-4 py-2.5 bg-linear-to-r from-purple-600 to-pink-600 text-white text-sm font-semibold rounded-xl hover:from-purple-700 hover:to-pink-700 transition-all duration-300 shadow-lg shadow-purple-500/25 hover:shadow-xl hover:shadow-purple-500/30 flex items-center justify-center gap-2 group/btn"
+                      className="flex-1 px-4 py-2.5 bg-linear-to-r from-purple-600 to-pink-600 text-white text-sm font-semibold rounded-xl hover:from-purple-700 hover:to-pink-700 transition-all duration-300 shadow-lg shadow-purple-500/25 flex items-center justify-center gap-2 group/btn"
                     >
                       <MessageSquare className="w-4 h-4 group-hover/btn:rotate-12 transition-transform" />
                       Message
@@ -917,6 +993,7 @@ export default function AllApplicationsPage() {
                     </Link>
                   </div>
 
+                  {/* Footer */}
                   <div className="mt-4 flex items-center justify-between text-xs">
                     <span className="text-gray-400">
                       Applied {formatDate(app.created_at)}
@@ -924,6 +1001,18 @@ export default function AllApplicationsPage() {
                     {app.status === "pending" && (
                       <span className="text-amber-600 bg-amber-50 px-2 py-1 rounded-full text-xs font-medium animate-pulse">
                         Awaiting review
+                      </span>
+                    )}
+                    {isJobCompleted && !hasUserRated && (
+                      <span className="text-purple-600 bg-purple-50 px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1">
+                        <Star className="w-3 h-3" />
+                        Ready to rate
+                      </span>
+                    )}
+                    {isJobCompleted && hasUserRated && (
+                      <span className="text-green-600 bg-green-50 px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1">
+                        <ThumbsUp className="w-3 h-3" />
+                        Rated
                       </span>
                     )}
                   </div>

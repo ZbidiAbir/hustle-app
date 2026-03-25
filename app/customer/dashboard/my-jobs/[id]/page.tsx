@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
@@ -25,6 +25,10 @@ import {
   Flag,
   MoreHorizontal,
 } from "lucide-react";
+
+import { useToast } from "@/contexts/ToastContext";
+import { RateButton } from "../../applications/[id]/components/shared/rate/RateButton";
+import { RatingSummary } from "../../applications/[id]/components/shared/rate/RatingSummary";
 
 // Types
 type Job = {
@@ -57,6 +61,9 @@ type Profile = {
   full_name: string;
   email: string;
   avatar_url?: string | null;
+  rating?: number | null;
+  job_title?: string;
+  trade_category?: string;
 };
 
 type Application = {
@@ -86,13 +93,53 @@ export default function JobDetailPage() {
   >("details");
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [showShareMenu, setShowShareMenu] = useState(false);
+  const [hasRated, setHasRated] = useState(false);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+
   const params = useParams();
   const router = useRouter();
+  const toast = useToast();
   const jobId = params.id as string;
+
+  // Fetch current user
+  useEffect(() => {
+    const getCurrentUser = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      setCurrentUser(user);
+    };
+    getCurrentUser();
+  }, []);
 
   useEffect(() => {
     fetchJobDetails();
   }, [jobId]);
+
+  // Check if user has rated this job
+  const checkIfHasRated = useCallback(async () => {
+    if (!jobId || !currentUser?.id) return;
+
+    try {
+      const { data: existingRate, error } = await supabase
+        .from("rates")
+        .select("id")
+        .eq("job_id", jobId)
+        .eq("reviewer_id", currentUser.id)
+        .maybeSingle();
+
+      setHasRated(!!existingRate);
+    } catch (error) {
+      console.error("Error checking rating status:", error);
+      setHasRated(false);
+    }
+  }, [jobId, currentUser?.id]);
+
+  useEffect(() => {
+    if (job && currentUser) {
+      checkIfHasRated();
+    }
+  }, [job, currentUser, checkIfHasRated]);
 
   const fetchJobDetails = async () => {
     try {
@@ -124,7 +171,9 @@ export default function JobDetailPage() {
         const workerIds = appsData.map((app) => app.worker_id);
         const { data: profilesData, error: profilesError } = await supabase
           .from("profiles")
-          .select("id, full_name, email, avatar_url")
+          .select(
+            "id, full_name, email, avatar_url, rating, job_title, trade_category"
+          )
           .in("id", workerIds);
 
         if (profilesError) throw profilesError;
@@ -140,6 +189,7 @@ export default function JobDetailPage() {
             full_name: "Unknown Worker",
             email: "unknown@email.com",
             avatar_url: null,
+            rating: null,
           },
         }));
 
@@ -155,7 +205,9 @@ export default function JobDetailPage() {
       if (jobData.worker_id) {
         const { data: workerData, error: workerError } = await supabase
           .from("profiles")
-          .select("id, full_name, email, avatar_url")
+          .select(
+            "id, full_name, email, avatar_url, rating, job_title, trade_category"
+          )
           .eq("id", jobData.worker_id)
           .single();
 
@@ -202,7 +254,7 @@ export default function JobDetailPage() {
         if (!error && messages && messages.length > 0) {
           const lastMessage = messages[0];
 
-          // Compter les messages non lus (si implémenté)
+          // Compter les messages non lus
           const { count: unreadCount } = await supabase
             .from("messages")
             .select("*", { count: "exact", head: true })
@@ -218,7 +270,6 @@ export default function JobDetailPage() {
             unreadCount: unreadCount || 0,
           });
         } else {
-          // Si pas de messages, ajouter quand même le worker avec un statut "No messages"
           conversationsList.push({
             worker,
             lastMessage: "No messages yet",
@@ -228,7 +279,6 @@ export default function JobDetailPage() {
         }
       }
 
-      // Trier par date du dernier message (les plus récents en premier)
       conversationsList.sort((a, b) => {
         if (!a.lastMessageTime) return 1;
         if (!b.lastMessageTime) return -1;
@@ -253,21 +303,26 @@ export default function JobDetailPage() {
 
       if (error) throw error;
 
-      alert("✅ Job cancelled successfully");
+      toast.success("Job cancelled successfully");
       fetchJobDetails();
       setShowCancelConfirm(false);
     } catch (error: any) {
-      alert(`❌ Error: ${error.message}`);
+      toast.error(`Error: ${error.message}`);
     }
   };
 
   const handleShare = () => {
     navigator.clipboard.writeText(window.location.href);
-    alert("✅ Link copied to clipboard!");
+    toast.success("Link copied to clipboard!");
     setShowShareMenu(false);
   };
 
-  // Fonction pour obtenir les initiales d'un nom
+  const handleRatingSuccess = () => {
+    toast.success("Thank you for your rating!");
+    setHasRated(true);
+    fetchJobDetails();
+  };
+
   const getInitials = (name: string) => {
     return name
       .split(" ")
@@ -277,7 +332,6 @@ export default function JobDetailPage() {
       .slice(0, 2);
   };
 
-  // Composant Avatar réutilisable
   const Avatar = ({
     profile,
     size = "md",
@@ -318,7 +372,6 @@ export default function JobDetailPage() {
       );
     }
 
-    // Fallback avec les initiales
     const colors = [
       "bg-purple-500",
       "bg-blue-500",
@@ -478,7 +531,7 @@ export default function JobDetailPage() {
             The job you're looking for doesn't exist or has been removed.
           </p>
           <Link
-            href="/customer/my-jobs"
+            href="/customer/dashboard/my-jobs"
             className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition"
           >
             Back to My Jobs
@@ -500,7 +553,7 @@ export default function JobDetailPage() {
         <div className="px-4 py-4">
           <div className="flex items-center gap-4 mb-3">
             <Link
-              href="/customer/my-jobs"
+              href="/customer/dashboard/my-jobs"
               className="p-2 hover:bg-gray-100 rounded-lg transition"
             >
               <ChevronRight className="w-5 h-5 text-gray-600 rotate-180" />
@@ -517,7 +570,6 @@ export default function JobDetailPage() {
               </span>
             </div>
             <div className="flex items-center gap-2">
-              {/* Share button */}
               <div className="relative">
                 <button
                   onClick={() => setShowShareMenu(!showShareMenu)}
@@ -537,7 +589,6 @@ export default function JobDetailPage() {
                 )}
               </div>
 
-              {/* More actions */}
               {job.status === "open" && (
                 <button
                   onClick={() => setShowCancelConfirm(true)}
@@ -597,6 +648,57 @@ export default function JobDetailPage() {
 
       {/* Content */}
       <div className="px-4 py-6">
+        {/* Assigned Worker Section - Only show if job has assigned worker */}
+        {assignedWorker && (
+          <div className="mb-6 p-4 bg-gradient-to-r from-purple-50 to-purple-100 rounded-xl border border-purple-200">
+            <div className="flex items-start gap-4">
+              <Avatar profile={assignedWorker} size="lg" />
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <h3 className="font-semibold text-gray-900">
+                    {assignedWorker.full_name}
+                  </h3>
+                  {assignedWorker.rating && (
+                    <div className="flex items-center gap-1">
+                      <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
+                      <span className="text-sm font-medium text-gray-700">
+                        {assignedWorker.rating.toFixed(1)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <p className="text-sm text-gray-600 mb-2">
+                  {assignedWorker.job_title || "Worker"} •{" "}
+                  {assignedWorker.email}
+                </p>
+
+                {/* Rating Summary */}
+                <div className="mb-3">
+                  <RatingSummary
+                    userId={assignedWorker.id}
+                    showDetails={true}
+                  />
+                </div>
+
+                {/* Rate Button - Only show if job is completed */}
+                {job.status === "completed" && (
+                  <div className="mt-3">
+                    <RateButton
+                      jobId={job.id}
+                      workerId={assignedWorker.id}
+                      workerName={assignedWorker.full_name}
+                      jobTitle={job.title}
+                      jobStatus={job.status}
+                      hasRated={hasRated}
+                      onRatingSuccess={handleRatingSuccess}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {activeTab === "details" && (
           <div className="space-y-6">
             {/* Title and Price */}
@@ -768,22 +870,28 @@ export default function JobDetailPage() {
                   className="border border-gray-200 rounded-xl p-4 hover:shadow-md transition"
                 >
                   <div className="flex items-start gap-3">
-                    {/* Avatar - Utilisation du composant Avatar */}
                     <Avatar profile={app.worker} size="md" />
-
-                    {/* Content */}
                     <div className="flex-1">
                       <div className="flex items-center justify-between mb-1">
-                        <h3 className="font-semibold text-gray-900">
-                          {app.worker?.full_name || "Anonymous"}
-                        </h3>
+                        <div>
+                          <h3 className="font-semibold text-gray-900">
+                            {app.worker?.full_name || "Anonymous"}
+                          </h3>
+                          {app.worker?.rating && (
+                            <div className="flex items-center gap-1 mt-0.5">
+                              <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
+                              <span className="text-xs text-gray-600">
+                                {app.worker.rating.toFixed(1)}
+                              </span>
+                            </div>
+                          )}
+                        </div>
                         {getApplicationStatusBadge(app.status)}
                       </div>
                       <p className="text-sm text-gray-600 mb-2">
                         {app.worker?.email}
                       </p>
 
-                      {/* Message if exists */}
                       {app.message && (
                         <p className="text-sm text-gray-700 bg-gray-50 p-2 rounded-lg mb-2 italic">
                           "{app.message}"
@@ -800,7 +908,6 @@ export default function JobDetailPage() {
                         </div>
                       </div>
 
-                      {/* Actions */}
                       <div className="flex gap-2 mt-3">
                         {app.status === "pending" && (
                           <Link
@@ -849,9 +956,19 @@ export default function JobDetailPage() {
                     <Avatar profile={conversation.worker} size="md" />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between mb-1">
-                        <h3 className="font-semibold text-gray-900">
-                          {conversation.worker.full_name}
-                        </h3>
+                        <div>
+                          <h3 className="font-semibold text-gray-900">
+                            {conversation.worker.full_name}
+                          </h3>
+                          {conversation.worker.rating && (
+                            <div className="flex items-center gap-1 mt-0.5">
+                              <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
+                              <span className="text-xs text-gray-600">
+                                {conversation.worker.rating.toFixed(1)}
+                              </span>
+                            </div>
+                          )}
+                        </div>
                         {conversation.lastMessageTime && (
                           <span className="text-xs text-gray-400">
                             {formatMessageTime(conversation.lastMessageTime)}

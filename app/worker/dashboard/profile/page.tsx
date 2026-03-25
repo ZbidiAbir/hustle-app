@@ -22,10 +22,39 @@ import {
   Shield,
   AlertCircle,
   X,
+  Star,
+  TrendingUp,
+  Award,
+  ThumbsUp,
+  Users,
 } from "lucide-react";
 import { useWorkerProfile } from "@/lib/hooks/useWorkerProfile";
 import { TabType, EmploymentType, ExperienceForm } from "@/types/profile";
+import { supabase } from "@/lib/supabase";
 
+interface RatingStats {
+  averageRating: number | null;
+  totalRatings: number;
+  isEstablished: boolean;
+  displayedRating: number | null;
+  statusText: string;
+  ratingDistribution: {
+    1: number;
+    2: number;
+    3: number;
+    4: number;
+    5: number;
+  };
+  recentRatings: Array<{
+    id: string;
+    rating: number;
+    review_text: string | null;
+    created_at: string;
+    reviewer_name: string;
+    reviewer_avatar?: string;
+    job_title?: string;
+  }>;
+}
 export default function WorkerProfilePage() {
   const {
     profile,
@@ -53,6 +82,8 @@ export default function WorkerProfilePage() {
     null
   );
   const [showExperienceForm, setShowExperienceForm] = useState(false);
+  const [ratingStats, setRatingStats] = useState<RatingStats | null>(null);
+  const [loadingRatings, setLoadingRatings] = useState(false);
 
   // États pour les formulaires
   const [basicInfoForm, setBasicInfoForm] = useState({
@@ -89,6 +120,149 @@ export default function WorkerProfilePage() {
     description: "",
   });
 
+  // Fonction pour récupérer les statistiques de rating
+  // Fonction pour récupérer les statistiques de rating
+  // Fonction pour récupérer les statistiques de rating
+  const fetchRatingStats = async () => {
+    if (!profile?.id) return;
+
+    setLoadingRatings(true);
+    try {
+      // Récupérer tous les ratings du worker avec les jobs associés
+      const { data: ratings, error } = await supabase
+        .from("rates")
+        .select(
+          `
+        id,
+        rating,
+        review_text,
+        created_at,
+        reviewer_id,
+        job_id
+      `
+        )
+        .eq("reviewee_id", profile.id)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      const totalRatings = ratings?.length ?? 0;
+
+      // Distribution des notes
+      const distribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+      ratings?.forEach((r) => {
+        if (r.rating >= 1 && r.rating <= 5) {
+          distribution[r.rating as keyof typeof distribution]++;
+        }
+      });
+
+      // Calculer la moyenne selon la formule
+      let averageRating = null;
+      let displayedRating = null;
+      let isEstablished = false;
+      let statusText = "No ratings yet";
+
+      if (totalRatings > 0) {
+        if (totalRatings >= 5) {
+          isEstablished = true;
+          if (totalRatings >= 10) {
+            const sortedRatings = [...ratings].sort(
+              (a, b) => a.rating - b.rating
+            );
+            const ratingsWithoutLowest = sortedRatings.slice(1);
+            const sum = ratingsWithoutLowest.reduce(
+              (acc, r) => acc + r.rating,
+              0
+            );
+            averageRating = sum / ratingsWithoutLowest.length;
+            displayedRating = parseFloat(averageRating.toFixed(1));
+            statusText = "Established";
+          } else {
+            const sum = ratings.reduce((acc, r) => acc + r.rating, 0);
+            averageRating = sum / totalRatings;
+            displayedRating = parseFloat(averageRating.toFixed(1));
+            statusText = "Established";
+          }
+        } else {
+          const sum = ratings.reduce((acc, r) => acc + r.rating, 0);
+          averageRating = sum / totalRatings;
+          displayedRating = null;
+          statusText = totalRatings === 1 ? "New" : "Establishing";
+        }
+      }
+
+      // Récupérer les infos des reviewers et les titres des jobs
+      const reviewerIds = [
+        ...new Set(ratings?.map((r) => r.reviewer_id).filter(Boolean) || []),
+      ];
+      const jobIds = [
+        ...new Set(ratings?.map((r) => r.job_id).filter(Boolean) || []),
+      ];
+
+      let reviewersMap = new Map();
+      let jobsMap = new Map();
+
+      if (reviewerIds.length > 0) {
+        const { data: reviewers } = await supabase
+          .from("profiles")
+          .select("id, full_name, avatar_url")
+          .in("id", reviewerIds);
+
+        reviewers?.forEach((r) => {
+          reviewersMap.set(r.id, { name: r.full_name, avatar: r.avatar_url });
+        });
+      }
+
+      // Récupérer les titres des jobs
+      if (jobIds.length > 0) {
+        const { data: jobs } = await supabase
+          .from("jobs")
+          .select("id, title")
+          .in("id", jobIds);
+
+        jobs?.forEach((j) => {
+          jobsMap.set(j.id, j.title);
+        });
+      }
+
+      // Construire les ratings récents
+      const recentRatings =
+        ratings?.slice(0, 5).map((r) => ({
+          id: r.id,
+          rating: r.rating,
+          review_text: r.review_text,
+          created_at: r.created_at,
+          reviewer_name: reviewersMap.get(r.reviewer_id)?.name || "Anonymous",
+          reviewer_avatar: reviewersMap.get(r.reviewer_id)?.avatar,
+          job_title: jobsMap.get(r.job_id) || undefined,
+        })) || [];
+
+      setRatingStats({
+        averageRating,
+        totalRatings,
+        isEstablished,
+        displayedRating,
+        statusText,
+        ratingDistribution: distribution,
+        recentRatings,
+      });
+    } catch (error) {
+      console.error("Error fetching rating stats:", error);
+      // En cas d'erreur, définir un état par défaut
+      setRatingStats({
+        averageRating: null,
+        totalRatings: 0,
+        isEstablished: false,
+        displayedRating: null,
+        statusText: "No ratings yet",
+        ratingDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+        recentRatings: [],
+      });
+    } finally {
+      setLoadingRatings(false);
+    }
+  };
+
   // Mettre à jour les formulaires quand le profil est chargé
   useEffect(() => {
     if (profile) {
@@ -114,6 +288,9 @@ export default function WorkerProfilePage() {
         bank_account_number: profile.bank_account_number || "",
         bank_routing_number: profile.bank_routing_number || "",
       });
+
+      // Récupérer les statistiques de rating
+      fetchRatingStats();
     }
   }, [profile]);
 
@@ -212,6 +389,15 @@ export default function WorkerProfilePage() {
       .slice(0, 2);
   };
 
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
@@ -251,8 +437,8 @@ export default function WorkerProfilePage() {
         </div>
       )}
 
-      <div className=" px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header avec profil - AVEC UPLOAD D'AVATAR */}
+      <div className="px-4 sm:px-6 lg:px-8 py-8">
+        {/* Header avec profil et rating */}
         <div className="mb-8 bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
           <div className="flex flex-col md:flex-row md:items-center gap-6">
             <div className="relative group">
@@ -268,7 +454,6 @@ export default function WorkerProfilePage() {
                 )}
               </div>
 
-              {/* Overlay pour upload */}
               <label
                 htmlFor="avatar-upload"
                 className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 rounded-full opacity-0 group-hover:opacity-100 transition cursor-pointer"
@@ -288,7 +473,6 @@ export default function WorkerProfilePage() {
                 disabled={uploadingAvatar}
               />
 
-              {/* Bouton de suppression */}
               {profile?.avatar_url && (
                 <button
                   onClick={removeAvatar}
@@ -299,14 +483,38 @@ export default function WorkerProfilePage() {
                 </button>
               )}
 
-              {/* Indicateur en ligne */}
               <div className="absolute -bottom-2 -right-2 w-6 h-6 bg-green-500 rounded-full border-2 border-white"></div>
             </div>
 
             <div className="flex-1">
-              <h1 className="text-3xl font-bold text-gray-900 mb-1">
-                {profile?.full_name || "Worker Profile"}
-              </h1>
+              <div className="flex items-center gap-3 flex-wrap mb-2">
+                <h1 className="text-3xl font-bold text-gray-900">
+                  {profile?.full_name || "Worker Profile"}
+                </h1>
+                {/* Rating Display */}
+                {ratingStats?.isEstablished && ratingStats.displayedRating && (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 rounded-full border border-amber-200">
+                    <div className="flex items-center gap-0.5">
+                      {[...Array(5)].map((_, i) => (
+                        <Star
+                          key={i}
+                          className={`w-4 h-4 ${
+                            i < Math.floor(ratingStats.displayedRating!)
+                              ? "fill-amber-500 text-amber-500"
+                              : "text-gray-300"
+                          }`}
+                        />
+                      ))}
+                    </div>
+                    <span className="text-sm font-bold text-amber-700">
+                      {ratingStats.displayedRating}
+                    </span>
+                    <span className="text-xs text-amber-600">
+                      ({ratingStats.totalRatings})
+                    </span>
+                  </div>
+                )}
+              </div>
               <div className="flex flex-wrap items-center gap-3 text-sm text-gray-600">
                 <span className="flex items-center gap-1">
                   <Mail className="w-4 h-4" />
@@ -351,6 +559,7 @@ export default function WorkerProfilePage() {
               {[
                 { id: "info", label: "Basic Info", icon: User },
                 { id: "experience", label: "Experience", icon: Briefcase },
+                { id: "ratings", label: "Ratings", icon: Star },
                 { id: "payment", label: "Payment", icon: DollarSign },
                 { id: "insurance", label: "Insurance", icon: Shield },
               ].map((tab) => {
@@ -386,6 +595,7 @@ export default function WorkerProfilePage() {
 
               <div className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* ... contenu existant du formulaire basic info ... */}
                   <div className="space-y-2">
                     <label className="block text-sm font-medium text-gray-700">
                       Full Name
@@ -486,6 +696,7 @@ export default function WorkerProfilePage() {
                   </h3>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* ... contenu existant du formulaire pro ... */}
                     <div className="space-y-2">
                       <label className="block text-sm font-medium text-gray-700">
                         Job Title
@@ -614,6 +825,7 @@ export default function WorkerProfilePage() {
                     {editingExperience ? "Edit Experience" : "New Experience"}
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* ... formulaire expérience existant ... */}
                     <div className="space-y-2">
                       <label className="block text-sm font-medium text-gray-700">
                         Company Name *
@@ -840,6 +1052,209 @@ export default function WorkerProfilePage() {
             </div>
           )}
 
+          {/* Ratings Tab */}
+          {
+            //@ts-ignore
+            activeTab === "ratings" && (
+              <div className="p-6">
+                <h2 className="text-lg font-semibold text-gray-900 mb-6 flex items-center gap-2">
+                  <Star className="w-5 h-5 text-amber-500" />
+                  My Ratings & Reviews
+                </h2>
+
+                {loadingRatings ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="w-8 h-8 text-purple-600 animate-spin" />
+                  </div>
+                ) : ratingStats && ratingStats.totalRatings > 0 ? (
+                  <div className="space-y-6">
+                    {/* Rating Summary Card */}
+                    <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-xl p-6 border border-amber-200">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        {/* Left - Overall Rating */}
+                        <div className="text-center">
+                          {ratingStats.isEstablished &&
+                          ratingStats.displayedRating ? (
+                            <>
+                              <div className="text-5xl font-bold text-amber-700 mb-2">
+                                {ratingStats.displayedRating}
+                              </div>
+                              <div className="flex items-center justify-center gap-1 mb-2">
+                                {[...Array(5)].map((_, i) => (
+                                  <Star
+                                    key={i}
+                                    className={`w-5 h-5 ${
+                                      i <
+                                      Math.floor(ratingStats.displayedRating!)
+                                        ? "fill-amber-500 text-amber-500"
+                                        : "text-gray-300"
+                                    }`}
+                                  />
+                                ))}
+                              </div>
+                              <p className="text-sm text-amber-600">
+                                out of 5 stars
+                              </p>
+                            </>
+                          ) : (
+                            <>
+                              <div className="text-3xl font-bold text-gray-700 mb-2">
+                                {ratingStats.statusText}
+                              </div>
+                              <div className="flex items-center justify-center gap-1 mb-2">
+                                <Star className="w-5 h-5 text-gray-400" />
+                              </div>
+                              <p className="text-sm text-gray-500">
+                                Need {5 - (ratingStats.totalRatings ?? 0)} more
+                                ratings
+                              </p>
+                            </>
+                          )}
+                        </div>
+
+                        {/* Middle - Stats */}
+                        <div className="text-center border-l border-r border-amber-200">
+                          <div className="text-3xl font-bold text-gray-900 mb-2">
+                            {ratingStats.totalRatings ?? 0}
+                          </div>
+                          <p className="text-sm text-gray-600 flex items-center justify-center gap-1">
+                            <Users className="w-4 h-4" />
+                            Total Ratings
+                          </p>
+                          {(ratingStats.totalRatings ?? 0) >= 10 && (
+                            <div className="mt-2 flex items-center justify-center gap-1 text-xs text-green-600 bg-green-50 rounded-full px-2 py-1 inline-flex">
+                              <TrendingUp className="w-3 h-3" />
+                              Lowest rating excluded
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Right - Distribution */}
+                        <div className="space-y-2">
+                          {[5, 4, 3, 2, 1].map((star) => {
+                            const count =
+                              ratingStats.ratingDistribution?.[
+                                star as keyof typeof ratingStats.ratingDistribution
+                              ] ?? 0;
+                            const totalRatings = ratingStats.totalRatings ?? 0;
+                            const percentage =
+                              totalRatings > 0
+                                ? (count / totalRatings) * 100
+                                : 0;
+
+                            return (
+                              <div
+                                key={star}
+                                className="flex items-center gap-2"
+                              >
+                                <div className="w-8 text-sm font-medium text-gray-600">
+                                  {star} ★
+                                </div>
+                                <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
+                                  <div
+                                    className="h-full bg-amber-400 rounded-full"
+                                    style={{ width: `${percentage}%` }}
+                                  />
+                                </div>
+                                <div className="w-8 text-xs text-gray-500 text-right">
+                                  {count}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Recent Reviews */}
+                    <div>
+                      <h3 className="font-medium text-gray-900 mb-4 flex items-center gap-2">
+                        <ThumbsUp className="w-4 h-4 text-purple-600" />
+                        Recent Reviews
+                      </h3>
+                      <div className="space-y-4">
+                        {ratingStats.recentRatings?.map((review) => (
+                          <div
+                            key={review.id}
+                            className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md transition"
+                          >
+                            <div className="flex items-start gap-3">
+                              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-gray-200 to-gray-300 flex items-center justify-center overflow-hidden flex-shrink-0">
+                                {review.reviewer_avatar ? (
+                                  <img
+                                    src={review.reviewer_avatar}
+                                    alt={review.reviewer_name}
+                                    className="w-full h-full object-cover"
+                                  />
+                                ) : (
+                                  <span className="text-sm font-bold text-gray-600">
+                                    {review.reviewer_name
+                                      ?.charAt(0)
+                                      .toUpperCase() || "?"}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex-1">
+                                <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
+                                  <span className="font-medium text-gray-900">
+                                    {review.reviewer_name}
+                                  </span>
+                                  <div className="flex items-center gap-1">
+                                    {[...Array(5)].map((_, i) => (
+                                      <Star
+                                        key={i}
+                                        className={`w-3.5 h-3.5 ${
+                                          i < (review.rating ?? 0)
+                                            ? "fill-amber-500 text-amber-500"
+                                            : "text-gray-300"
+                                        }`}
+                                      />
+                                    ))}
+                                  </div>
+                                </div>
+
+                                {/* Job Title */}
+                                {review.job_title && (
+                                  <div className="mb-2">
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-50 text-purple-700 text-xs rounded-full border border-purple-200">
+                                      <Briefcase className="w-3 h-3" />
+                                      {review.job_title}
+                                    </span>
+                                  </div>
+                                )}
+
+                                {review.review_text && (
+                                  <p className="text-sm text-gray-700 mt-2 bg-gray-50 p-3 rounded-lg">
+                                    "{review.review_text}"
+                                  </p>
+                                )}
+                                <p className="text-xs text-gray-400 mt-2">
+                                  {review.created_at
+                                    ? formatDate(review.created_at)
+                                    : "Recently"}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-12 bg-gray-50 rounded-lg">
+                    <Star className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-1">
+                      No ratings yet
+                    </h3>
+                    <p className="text-sm text-gray-500">
+                      Complete jobs and provide excellent service to receive
+                      ratings
+                    </p>
+                  </div>
+                )}
+              </div>
+            )
+          }
           {/* Payment Tab */}
           {activeTab === "payment" && (
             <div className="p-6">
