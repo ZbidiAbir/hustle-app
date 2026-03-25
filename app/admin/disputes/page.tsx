@@ -610,7 +610,7 @@ export default function AdminDisputesManagementPage() {
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div>
               <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-                <Scale className="w-6 h-6 text-blue-600" />
+                <Scale className="w-6 h-6 text-red-600" />
                 Dispute Management
               </h1>
               <p className="text-sm text-gray-500 mt-1">
@@ -628,8 +628,8 @@ export default function AdminDisputesManagementPage() {
         </div>
       </div>
 
-      <div className="px-4 sm:px-6 lg:px-8 py-6">
-        <div className="max-w-7xl mx-auto space-y-6">
+      <div className=" py-6">
+        <div className=" space-y-6">
           {/* Stats Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
             <StatCard

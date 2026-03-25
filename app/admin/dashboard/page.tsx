@@ -660,7 +660,7 @@ export default function AdminDashboard() {
                 <XAxis dataKey="name" />
                 <YAxis />
                 <CartesianGrid strokeDasharray="3 3" />
-                <Tooltip formatter={(value) => `$${value}`} />
+                <Tooltip formatter={(value: any) => `$${value}`} />
                 <Area
                   type="monotone"
                   dataKey="value"

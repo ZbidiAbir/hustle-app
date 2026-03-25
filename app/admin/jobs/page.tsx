@@ -55,6 +55,7 @@ type Job = {
     full_name: string;
     email: string;
     avatar_url?: string;
+    account_type?: string;
   };
   worker?: {
     id: string;
@@ -150,7 +151,7 @@ export default function AdminJobsPage() {
       // Récupérer les profils
       const { data: profilesData } = await supabase
         .from("profiles")
-        .select("id, full_name, email, avatar_url")
+        .select("id, full_name, email, avatar_url, account_type")
         .in("id", allIds);
 
       const profilesMap = new Map(profilesData?.map((p) => [p.id, p]) || []);
@@ -165,11 +166,7 @@ export default function AdminJobsPage() {
 
           // Déterminer le type de client (basé sur des données réelles si disponibles)
           const customerProfile = profilesMap.get(job.customer_id);
-          const customerType = //@ts-ignore
-
-          customerProfile?.metadata?.business_name
-            ? "business"
-            : "homeowner";
+          const customerType = customerProfile?.account_type; //@ts-ignore
 
           return {
             ...job,
@@ -474,7 +471,7 @@ export default function AdminJobsPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-7xl mx-auto space-y-6 px-4 sm:px-6 lg:px-8">
+      <div className=" space-y-6 ">
         {/* Header */}
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">
@@ -732,12 +729,6 @@ export default function AdminJobsPage() {
                             <div>
                               <div className="text-sm font-medium text-gray-900">
                                 {job.customer.full_name || "Unknown"}
-                              </div>
-                              <div className="flex items-center gap-1 text-xs text-gray-500">
-                                {getCustomerTypeIcon(job.customer_type)}
-                                <span>
-                                  {getCustomerTypeLabel(job.customer_type)}
-                                </span>
                               </div>
                             </div>
                           </div>
