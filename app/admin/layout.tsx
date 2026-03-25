@@ -22,6 +22,7 @@ import {
   AlertTriangle,
   CheckCircle,
   MessageSquare,
+  FlagTriangleRight,
 } from "lucide-react";
 
 type User = {
@@ -165,10 +166,10 @@ export default function AdminLayout({
       current: pathname === "/admin/payments",
     },
     {
-      name: "Reports",
-      href: "/admin/reports",
-      icon: BarChart3,
-      current: pathname === "/admin/reports",
+      name: "Disputes",
+      href: "/admin/disputes",
+      icon: FlagTriangleRight,
+      current: pathname === "/admin/disputes",
       badge: stats.reportedContent,
     },
     {

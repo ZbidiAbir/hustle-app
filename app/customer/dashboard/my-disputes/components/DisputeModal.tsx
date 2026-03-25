@@ -494,7 +494,7 @@ export function DisputeModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
         {/* Modal Header */}
         <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
@@ -531,7 +531,7 @@ export function DisputeModal({
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="bg-white rounded-lg p-3">
+                  {/* <div className="bg-white rounded-lg p-3">
                     <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
                       <DollarSign className="w-3 h-3" />
                       Budget
@@ -542,7 +542,7 @@ export function DisputeModal({
                         ({dispute.job.budget_type})
                       </span>
                     </p>
-                  </div>
+                  </div> */}
 
                   <div className="bg-white rounded-lg p-3">
                     <p className="text-xs text-gray-500 mb-1">Job Status</p>
@@ -600,17 +600,18 @@ export function DisputeModal({
             <div className="bg-gray-50 rounded-lg p-4">
               <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
                 <User className="w-4 h-4" />
-                Created By (Customer)
+                Created By
               </h3>
               <div className="space-y-2">
                 <p className="text-sm">
                   <span className="font-medium">Name:</span>{" "}
-                  {dispute.created_by_user?.full_name || "N/A"}
+                  {dispute.created_by_user?.full_name || "N/A"}(
+                  {dispute.created_by_user?.role})
                 </p>
                 <p className="text-sm flex items-center gap-1">
                   <Mail className="w-3 h-3 text-gray-400" />
                   <span className="font-medium">Email:</span>{" "}
-                  {dispute.created_by_user?.email || "N/A"}
+                  {dispute.created_by_user?.email || "N/A"} ({" "}
                 </p>
               </div>
             </div>
@@ -623,7 +624,8 @@ export function DisputeModal({
               <div className="space-y-2">
                 <p className="text-sm">
                   <span className="font-medium">Name:</span>{" "}
-                  {dispute.against_user_details?.full_name || "N/A"}
+                  {dispute.against_user_details?.full_name || "N/A"} (
+                  {dispute.against_user_details?.role})
                 </p>
                 <p className="text-sm flex items-center gap-1">
                   <Mail className="w-3 h-3 text-gray-400" />
@@ -763,7 +765,7 @@ export function DisputeModal({
           )}
 
           {/* Resolution Form */}
-          {(dispute.status === "pending" ||
+          {/* {(dispute.status === "pending" ||
             dispute.status === "under_review") && (
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
               <h3 className="text-sm font-semibold text-blue-900 mb-3 flex items-center gap-2">
@@ -804,7 +806,7 @@ export function DisputeModal({
                 </button>
               </div>
             </div>
-          )}
+          )} */}
         </div>
 
         {/* Modal Footer */}

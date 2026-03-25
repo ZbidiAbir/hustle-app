@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import {
   AlertTriangle,
@@ -11,8 +12,6 @@ import {
   MessageSquare,
   DollarSign,
   Calendar,
-  User,
-  FileText,
   Shield,
   Scale,
   ChevronLeft,
@@ -20,7 +19,6 @@ import {
   Search,
   Filter,
   RefreshCw,
-  Briefcase,
   Star,
 } from "lucide-react";
 import { DisputeModal } from "./components/DisputeModal";
@@ -98,6 +96,8 @@ export default function AdminDisputesPage() {
   const [showModal, setShowModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authChecking, setAuthChecking] = useState(true);
   const [filters, setFilters] = useState<FilterOptions>({
     type: "all",
     status: "all",
@@ -120,15 +120,67 @@ export default function AdminDisputesPage() {
     other: 0,
   });
 
+  const router = useRouter();
+
+  // Vérifier l'authentification au chargement
   useEffect(() => {
-    getCurrentUser();
+    checkAuth();
   }, []);
 
+  const checkAuth = async () => {
+    try {
+      const {
+        data: { session },
+        error,
+      } = await supabase.auth.getSession();
+
+      if (error) {
+        console.error("Error checking auth:", error);
+        router.push("/login");
+        return;
+      }
+
+      if (!session) {
+        console.log("No active session, redirecting to login");
+        router.push("/login");
+        return;
+      }
+
+      // Vérifier que l'utilisateur existe et a le bon rôle
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("id, role")
+        .eq("id", session.user.id)
+        .single();
+
+      if (profileError || !profile) {
+        console.error("Error fetching profile:", profileError);
+        router.push("/login");
+        return;
+      }
+
+      setIsAuthenticated(true);
+      setCurrentUserId(session.user.id);
+      console.log(
+        "User authenticated:",
+        session.user.id,
+        "Role:",
+        profile.role
+      );
+    } catch (error) {
+      console.error("Error in checkAuth:", error);
+      router.push("/login");
+    } finally {
+      setAuthChecking(false);
+    }
+  };
+
+  // Charger les disputes après authentification
   useEffect(() => {
-    if (currentUserId) {
+    if (isAuthenticated && currentUserId) {
       fetchDisputes();
     }
-  }, [currentUserId]);
+  }, [isAuthenticated, currentUserId]);
 
   useEffect(() => {
     filterDisputes();
@@ -137,27 +189,6 @@ export default function AdminDisputesPage() {
   useEffect(() => {
     setCurrentPage(1);
   }, [filteredDisputes]);
-
-  const getCurrentUser = async () => {
-    try {
-      const {
-        data: { user },
-        error,
-      } = await supabase.auth.getUser();
-
-      if (error) {
-        console.error("Error getting current user:", error);
-        return;
-      }
-
-      if (user) {
-        setCurrentUserId(user.id);
-        console.log("Current user ID:", user.id);
-      }
-    } catch (error) {
-      console.error("Error in getCurrentUser:", error);
-    }
-  };
 
   const fetchDisputes = async () => {
     if (!currentUserId) {
@@ -173,7 +204,7 @@ export default function AdminDisputesPage() {
       const { data: disputesData, error: disputesError } = await supabase
         .from("disputes")
         .select("*")
-        .eq("created_by", currentUserId) // Filtrer par l'utilisateur connecté
+        .eq("created_by", currentUserId)
         .order("created_at", { ascending: false });
 
       if (disputesError) {
@@ -195,9 +226,8 @@ export default function AdminDisputesPage() {
       const jobIds = [
         ...new Set(disputesData.map((d) => d.job_id).filter((id) => id)),
       ];
-      console.log("Job IDs to fetch:", jobIds);
 
-      // Récupérer les IDs des utilisateurs uniques (les autres participants)
+      // Récupérer les IDs des utilisateurs uniques
       const userIds = [
         ...new Set(
           [
@@ -209,14 +239,11 @@ export default function AdminDisputesPage() {
         ),
       ];
 
-      // Ajouter l'utilisateur actuel s'il n'est pas déjà dans la liste
       if (currentUserId && !userIds.includes(currentUserId)) {
         userIds.push(currentUserId);
       }
 
-      console.log("User IDs to fetch:", userIds);
-
-      // Fetch jobs avec TOUS les champs
+      // Fetch jobs
       let jobsMap = new Map();
       if (jobIds.length > 0) {
         const { data: jobsData, error: jobsError } = await supabase
@@ -224,12 +251,8 @@ export default function AdminDisputesPage() {
           .select("*")
           .in("id", jobIds);
 
-        if (jobsError) {
-          console.error("Error fetching jobs:", jobsError);
-        } else if (jobsData) {
-          console.log("Jobs fetched:", jobsData.length);
+        if (!jobsError && jobsData) {
           jobsData.forEach((job) => {
-            console.log(`Job ${job.id}:`, job.title);
             jobsMap.set(job.id, job);
           });
         }
@@ -243,12 +266,8 @@ export default function AdminDisputesPage() {
           .select("id, full_name, email, avatar_url, role")
           .in("id", userIds);
 
-        if (usersError) {
-          console.error("Error fetching users:", usersError);
-        } else if (usersData) {
-          console.log("Users fetched:", usersData.length);
+        if (!usersError && usersData) {
           usersData.forEach((user) => {
-            console.log(`User ${user.id}:`, user.full_name);
             usersMap.set(user.id, user);
           });
         }
@@ -256,7 +275,6 @@ export default function AdminDisputesPage() {
 
       // Combiner les données
       const disputesWithDetails = disputesData.map((dispute) => {
-        // Parser evidence si nécessaire
         let evidenceArray = dispute.evidence;
         if (typeof dispute.evidence === "string") {
           try {
@@ -266,17 +284,10 @@ export default function AdminDisputesPage() {
           }
         }
 
-        const jobData = jobsMap.get(dispute.job_id);
-        console.log(
-          `Dispute ${dispute.id} - Job ID: ${dispute.job_id}, Job found:`,
-          !!jobData,
-          jobData?.title
-        );
-
         return {
           ...dispute,
           evidence: Array.isArray(evidenceArray) ? evidenceArray : [],
-          job: jobData || null,
+          job: jobsMap.get(dispute.job_id) || null,
           created_by_user: usersMap.get(dispute.created_by) || null,
           against_user_details: usersMap.get(dispute.against_user) || null,
           resolved_by_user: dispute.resolved_by
@@ -284,16 +295,6 @@ export default function AdminDisputesPage() {
             : null,
         };
       });
-
-      console.log(
-        "Final disputes with details:",
-        disputesWithDetails.map((d) => ({
-          id: d.id,
-          job_title: d.job?.title,
-          job_location: d.job?.location,
-          created_by: d.created_by_user?.full_name,
-        }))
-      );
 
       setDisputes(disputesWithDetails);
       updateStats(disputesWithDetails);
@@ -507,6 +508,23 @@ export default function AdminDisputesPage() {
       <p className="text-xs text-gray-500 mt-1">{title}</p>
     </div>
   );
+
+  // Afficher un loader pendant la vérification de l'authentification
+  if (authChecking) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-red-600 border-t-transparent mx-auto mb-4"></div>
+          <p className="text-gray-600">Checking authentication...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Si non authentifié, ne pas afficher le contenu (la redirection est déjà en cours)
+  if (!isAuthenticated) {
+    return null;
+  }
 
   if (loading) {
     return (
@@ -727,11 +745,6 @@ export default function AdminDisputesPage() {
                           <p className="text-xs text-gray-500">
                             {formatCurrency(dispute.job?.budget)}
                           </p>
-                          {!dispute.job && (
-                            <p className="text-xs text-red-500 mt-1">
-                              Job ID: {dispute.job_id?.substring(0, 8)}...
-                            </p>
-                          )}
                         </div>
                       </td>
                       <td className="px-4 py-3">

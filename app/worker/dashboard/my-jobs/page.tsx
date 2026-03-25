@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -38,6 +38,7 @@ import {
   ThumbsUp,
   Users,
   ChevronLeft,
+  AlertTriangle,
 } from "lucide-react";
 
 type Job = {
@@ -93,6 +94,522 @@ type JobStats = {
   customerSatisfaction: number;
 };
 
+// Dispute Modal Component
+const DisputeCreationModal = ({
+  job,
+  onClose,
+  onSuccess,
+}: {
+  job: Job;
+  onClose: () => void;
+  onSuccess: () => void;
+}) => {
+  const [disputeType, setDisputeType] = useState<
+    "payment" | "quality" | "timeline" | "communication" | "safety" | "other"
+  >("other");
+  const [description, setDescription] = useState("");
+  const [preferredResolution, setPreferredResolution] = useState("");
+  const [evidence, setEvidence] = useState<{ url: string; file?: File }[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [uploadProgress, setUploadProgress] = useState<{
+    [key: string]: number;
+  }>({});
+
+  const disputeTypes = [
+    {
+      value: "payment",
+      label: "Payment Issue",
+      icon: DollarSign,
+      color: "text-green-600",
+      bg: "bg-green-50",
+    },
+    {
+      value: "quality",
+      label: "Quality Issue",
+      icon: Star,
+      color: "text-purple-600",
+      bg: "bg-purple-50",
+    },
+    {
+      value: "timeline",
+      label: "Timeline Issue",
+      icon: Clock,
+      color: "text-orange-600",
+      bg: "bg-orange-50",
+    },
+    {
+      value: "communication",
+      label: "Communication Issue",
+      icon: MessageSquare,
+      color: "text-blue-600",
+      bg: "bg-blue-50",
+    },
+    {
+      value: "safety",
+      label: "Safety Concern",
+      icon: Shield,
+      color: "text-red-600",
+      bg: "bg-red-50",
+    },
+    {
+      value: "other",
+      label: "Other Issue",
+      icon: AlertTriangle,
+      color: "text-gray-600",
+      bg: "bg-gray-50",
+    },
+  ];
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const uploadFileToSupabase = async (file: File): Promise<string> => {
+    const fileExt = file.name.split(".").pop();
+    const fileName = `${Date.now()}_${Math.random()
+      .toString(36)
+      .substring(2)}.${fileExt}`;
+    const filePath = `disputes/${job.id}/${fileName}`;
+
+    try {
+      // Simuler la progression du téléchargement
+      const simulateProgress = () => {
+        let progress = 0;
+        const interval = setInterval(() => {
+          progress += 10;
+          if (progress <= 90) {
+            setUploadProgress((prev) => ({ ...prev, [file.name]: progress }));
+          }
+          if (progress >= 90) clearInterval(interval);
+        }, 200);
+        return interval;
+      };
+
+      const progressInterval = simulateProgress();
+
+      const { error: uploadError, data } = await supabase.storage
+        .from("dispute-evidence")
+        .upload(filePath, file, {
+          cacheControl: "3600",
+          upsert: false,
+        });
+
+      clearInterval(progressInterval);
+      setUploadProgress((prev) => ({ ...prev, [file.name]: 100 }));
+
+      if (uploadError) throw uploadError;
+
+      // Récupérer l'URL publique
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from("dispute-evidence").getPublicUrl(filePath);
+
+      return publicUrl;
+    } catch (error: any) {
+      console.error("Error uploading file:", error);
+      throw new Error(`Failed to upload ${file.name}: ${error.message}`);
+    }
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    // Vérifier la taille des fichiers (max 10MB par fichier)
+    const maxSize = 10 * 1024 * 1024; // 10MB
+    const oversizedFiles = files.filter((file) => file.size > maxSize);
+    if (oversizedFiles.length > 0) {
+      setError(
+        `Files too large: ${oversizedFiles
+          .map((f) => f.name)
+          .join(", ")}. Maximum size is 10MB per file.`
+      );
+      return;
+    }
+
+    // Vérifier les types de fichiers autorisés
+    const allowedTypes = [
+      "image/jpeg",
+      "image/png",
+      "image/gif",
+      "image/webp",
+      "application/pdf",
+      "text/plain",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ];
+    const invalidFiles = files.filter(
+      (file) => !allowedTypes.includes(file.type)
+    );
+    if (invalidFiles.length > 0) {
+      setError(
+        `Invalid file types: ${invalidFiles
+          .map((f) => f.name)
+          .join(", ")}. Allowed types: images, PDF, Word, and text files only.`
+      );
+      return;
+    }
+
+    setUploading(true);
+    setError("");
+
+    try {
+      const uploadPromises = files.map(async (file) => {
+        const url = await uploadFileToSupabase(file);
+        return { url, file };
+      });
+
+      const uploadedFiles = await Promise.all(uploadPromises);
+      setEvidence((prev) => [...prev, ...uploadedFiles]);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  };
+
+  const removeEvidence = (index: number) => {
+    setEvidence(evidence.filter((_, i) => i !== index));
+  };
+
+  const handleSubmit = async () => {
+    if (!description.trim()) {
+      setError("Please provide a description of the issue");
+      return;
+    }
+
+    if (!preferredResolution.trim()) {
+      setError("Please describe your preferred resolution");
+      return;
+    }
+
+    setSubmitting(true);
+    setError("");
+
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        setError("You must be logged in to create a dispute");
+        setSubmitting(false);
+        return;
+      }
+
+      // Extraire uniquement les URLs pour l'enregistrement
+      const evidenceUrls = evidence.map((e) => e.url);
+
+      const { error: disputeError } = await supabase.from("disputes").insert({
+        job_id: job.id,
+        created_by: user.id,
+        against_user: job.customer_id,
+        type: disputeType,
+        description: description.trim(),
+        preferred_resolution: preferredResolution.trim(),
+        evidence: evidenceUrls,
+        status: "pending",
+        created_at: new Date().toISOString(),
+      });
+
+      if (disputeError) throw disputeError;
+
+      onSuccess();
+      onClose();
+    } catch (err: any) {
+      console.error("Error creating dispute:", err);
+      setError(err.message || "Failed to create dispute");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const getFileIcon = (url: string) => {
+    const extension = url.split(".").pop()?.toLowerCase();
+    if (extension === "pdf")
+      return <FileText className="w-4 h-4 text-red-500" />;
+    if (["jpg", "jpeg", "png", "gif", "webp"].includes(extension || ""))
+      return <ImageIcon className="w-4 h-4 text-blue-500" />;
+    if (["doc", "docx"].includes(extension || ""))
+      return <FileText className="w-4 h-4 text-blue-600" />;
+    if (["txt"].includes(extension || ""))
+      return <FileText className="w-4 h-4 text-gray-500" />;
+    return <FileText className="w-4 h-4 text-gray-500" />;
+  };
+
+  const formatFileSize = (bytes?: number) => {
+    if (!bytes) return "";
+    const sizes = ["B", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${sizes[i]}`;
+  };
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-red-100 rounded-lg">
+              <AlertTriangle className="w-5 h-5 text-red-600" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-gray-900">
+                Report an Issue
+              </h2>
+              <p className="text-sm text-gray-500">Job: {job.title}</p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-gray-100 rounded-lg transition"
+          >
+            <X className="w-5 h-5 text-gray-500" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-6">
+          {/* Dispute Type */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-3">
+              Issue Type *
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {disputeTypes.map((type) => {
+                const Icon = type.icon;
+                const isSelected = disputeType === type.value;
+                return (
+                  <button
+                    key={type.value}
+                    onClick={() => setDisputeType(type.value as any)}
+                    className={`p-3 rounded-xl border-2 transition-all flex flex-col items-center gap-2 ${
+                      isSelected
+                        ? `${type.bg} border-${type.color.split("-")[1]}-500`
+                        : "bg-white border-gray-200 hover:border-gray-300"
+                    }`}
+                  >
+                    <Icon
+                      className={`w-5 h-5 ${
+                        isSelected ? type.color : "text-gray-400"
+                      }`}
+                    />
+                    <span
+                      className={`text-xs font-medium ${
+                        isSelected ? "text-gray-900" : "text-gray-600"
+                      }`}
+                    >
+                      {type.label}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Description */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Description of the Issue *
+            </label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={4}
+              className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-transparent resize-none"
+              placeholder="Please describe in detail what went wrong..."
+            />
+          </div>
+
+          {/* Preferred Resolution */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Preferred Resolution *
+            </label>
+            <textarea
+              value={preferredResolution}
+              onChange={(e) => setPreferredResolution(e.target.value)}
+              rows={3}
+              className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-transparent resize-none"
+              placeholder="How would you like this issue to be resolved?"
+            />
+          </div>
+
+          {/* Evidence Upload */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Evidence (Optional)
+            </label>
+            <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-xl hover:border-red-500 transition-colors">
+              <div className="space-y-1 text-center">
+                <Camera className="mx-auto h-12 w-12 text-gray-400" />
+                <div className="flex text-sm text-gray-600">
+                  <label
+                    htmlFor="file-upload"
+                    className="relative cursor-pointer bg-white rounded-md font-medium text-red-600 hover:text-red-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-red-500"
+                  >
+                    <span>Upload files</span>
+                    <input
+                      ref={fileInputRef}
+                      id="file-upload"
+                      name="file-upload"
+                      type="file"
+                      className="sr-only"
+                      multiple
+                      accept="image/*,.pdf,.doc,.docx,.txt"
+                      onChange={handleFileSelect}
+                      disabled={uploading}
+                    />
+                  </label>
+                  <p className="pl-1">or drag and drop</p>
+                </div>
+                <p className="text-xs text-gray-500">
+                  Images, PDF, Word, or text files up to 10MB each
+                </p>
+              </div>
+            </div>
+
+            {/* Upload Progress */}
+            {uploading && Object.keys(uploadProgress).length > 0 && (
+              <div className="mt-3 space-y-2">
+                {Object.entries(uploadProgress).map(([fileName, progress]) => (
+                  <div key={fileName} className="bg-gray-50 rounded-lg p-2">
+                    <div className="flex items-center justify-between text-xs mb-1">
+                      <span className="text-gray-600 truncate flex-1">
+                        {fileName}
+                      </span>
+                      <span className="text-gray-500 ml-2">{progress}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-1.5">
+                      <div
+                        className="bg-blue-600 h-1.5 rounded-full transition-all duration-300"
+                        style={{ width: `${progress}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Evidence List */}
+            {evidence.length > 0 && (
+              <div className="mt-4 space-y-2">
+                <p className="text-sm font-medium text-gray-700">
+                  Uploaded Files ({evidence.length})
+                </p>
+                {evidence.map((item, index) => (
+                  <div
+                    key={index}
+                    className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition group"
+                  >
+                    <div className="flex-shrink-0">{getFileIcon(item.url)}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-600 truncate">
+                          {item.file?.name ||
+                            item.url.split("/").pop() ||
+                            "File"}
+                        </span>
+                        {item.file?.size && (
+                          <span className="text-xs text-gray-400">
+                            {formatFileSize(item.file.size)}
+                          </span>
+                        )}
+                      </div>
+                      <a
+                        href={item.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1 mt-1"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Eye className="w-3 h-3" />
+                        View file
+                      </a>
+                    </div>
+                    <button
+                      onClick={() => removeEvidence(index)}
+                      className="p-1.5 hover:bg-gray-200 rounded-lg opacity-0 group-hover:opacity-100 transition"
+                    >
+                      <X className="w-4 h-4 text-gray-500" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Error Message */}
+          {error && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <span className="flex-1">{error}</span>
+              <button
+                onClick={() => setError("")}
+                className="p-1 hover:bg-red-100 rounded"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex gap-3 pt-4">
+            <button
+              onClick={onClose}
+              disabled={uploading}
+              className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition font-medium disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={submitting || uploading}
+              className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 transition font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {submitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Submitting...
+                </>
+              ) : uploading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Uploading...
+                </>
+              ) : (
+                <>
+                  <AlertTriangle className="w-4 h-4" />
+                  Submit Dispute
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* Info note */}
+          <div className="text-xs text-gray-500 text-center pt-2">
+            <p>
+              Your dispute will be reviewed by an administrator within 24-48
+              hours.
+            </p>
+            <p className="mt-1">
+              All evidence will be kept confidential and only shared with
+              involved parties.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function WorkerMyJobsPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
@@ -108,6 +625,7 @@ export default function WorkerMyJobsPage() {
   >("newest");
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [showJobModal, setShowJobModal] = useState(false);
+  const [showDisputeModal, setShowDisputeModal] = useState(false);
 
   const router = useRouter();
 
@@ -128,7 +646,6 @@ export default function WorkerMyJobsPage() {
           return;
         }
 
-        // Fetch jobs assigned to this worker with all fields
         const { data: jobsData, error: jobsError } = await supabase
           .from("jobs")
           .select("*")
@@ -137,7 +654,6 @@ export default function WorkerMyJobsPage() {
 
         if (jobsError) throw jobsError;
 
-        // Fetch customer profiles for each job
         const customerIds = jobsData?.map((job) => job.customer_id) || [];
         const { data: customersData } = await supabase
           .from("profiles")
@@ -159,16 +675,13 @@ export default function WorkerMyJobsPage() {
           customersData?.map((c) => [c.id, c]) || []
         );
 
-        // Get message counts for each job
         const jobsWithDetails = await Promise.all(
           (jobsData || []).map(async (job) => {
-            // Count messages
             const { count: messagesCount } = await supabase
               .from("messages")
               .select("*", { count: "exact", head: true })
               .eq("job_id", job.id);
 
-            // Get customer rating (from reviews)
             const { data: reviews } = await supabase
               .from("reviews")
               .select("rating")
@@ -176,9 +689,8 @@ export default function WorkerMyJobsPage() {
 
             const avgRating = reviews?.length
               ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length
-              : 4.5; // Default rating if no reviews
+              : 4.5;
 
-            // Calculate days remaining (for active jobs)
             let daysRemaining;
             if (
               job.date &&
@@ -230,7 +742,6 @@ export default function WorkerMyJobsPage() {
 
         if (error) throw error;
 
-        // Update local state
         setJobs((prev) =>
           prev.map((job) =>
             job.id === jobId
@@ -239,7 +750,6 @@ export default function WorkerMyJobsPage() {
           )
         );
 
-        // Success message
         const messages = {
           in_progress: "✅ Job started successfully!",
           completed: "✅ Job marked as completed! Great work!",
@@ -296,7 +806,6 @@ export default function WorkerMyJobsPage() {
     }
   };
 
-  // Calculate real stats
   const stats = useMemo<JobStats>(() => {
     const active = jobs.filter(
       (j) => j.status === "assigned" || j.status === "in_progress"
@@ -304,11 +813,10 @@ export default function WorkerMyJobsPage() {
     const completed = jobs.filter((j) => j.status === "completed");
     const cancelled = jobs.filter((j) => j.status === "cancelled");
 
-    // Calculate earnings based on pay_type
     const calculateEarnings = (job: Job) => {
       if (job.pay_type === "Fixed" && job.fixed_rate) return job.fixed_rate;
       if (job.pay_type === "Hourly" && job.hourly_rate)
-        return job.hourly_rate * 8; // Estimate 8 hours
+        return job.hourly_rate * 8;
       return job.price || 0;
     };
 
@@ -321,7 +829,6 @@ export default function WorkerMyJobsPage() {
       0
     );
 
-    // Calculate average rating from completed jobs
     const ratings = completed
       .map((j) => j.customer?.rating || 0)
       .filter((r) => r > 0);
@@ -337,15 +844,13 @@ export default function WorkerMyJobsPage() {
       totalEarnings,
       pendingEarnings,
       averageRating,
-      customerSatisfaction: averageRating * 20, // Convert to percentage (5 stars = 100%)
+      customerSatisfaction: averageRating * 20,
     };
   }, [jobs]);
 
-  // Filter and sort jobs
   const filteredJobs = useMemo(() => {
     let filtered = [...jobs];
 
-    // Apply status filter
     if (filter === "active") {
       filtered = filtered.filter(
         (job) => job.status === "assigned" || job.status === "in_progress"
@@ -356,7 +861,6 @@ export default function WorkerMyJobsPage() {
       filtered = filtered.filter((job) => job.status === "cancelled");
     }
 
-    // Apply search
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(
@@ -368,7 +872,6 @@ export default function WorkerMyJobsPage() {
       );
     }
 
-    // Apply sorting
     filtered.sort((a, b) => {
       const getPrice = (job: Job) => {
         if (job.pay_type === "Fixed") return job.fixed_rate || 0;
@@ -541,10 +1044,7 @@ export default function WorkerMyJobsPage() {
         className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
         onClick={onClose}
       >
-        <div
-          className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
-          onClick={(e) => e.stopPropagation()}
-        >
+        <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
           <div className={`h-2 bg-gradient-to-r ${statusConfig.gradient}`} />
 
           <div className="p-6">
@@ -663,7 +1163,6 @@ export default function WorkerMyJobsPage() {
                 </div>
               )}
 
-              {/* Customer Info */}
               {job.customer && (
                 <div className="mt-6 pt-4 border-t border-gray-200">
                   <h3 className="font-medium text-gray-900 mb-3">Client</h3>
@@ -713,7 +1212,6 @@ export default function WorkerMyJobsPage() {
               )}
             </div>
 
-            {/* Actions */}
             <div className="mt-6 pt-4 border-t border-gray-200 flex gap-3">
               <Link
                 href={`/worker/dashboard/chat/${job.id}`}
@@ -748,6 +1246,23 @@ export default function WorkerMyJobsPage() {
                   Complete Job
                 </button>
               )}
+            </div>
+
+            {/* Report Issue Button */}
+            <div className="mt-3">
+              <button
+                onClick={() => {
+                  onClose();
+                  setTimeout(() => {
+                    setSelectedJob(job);
+                    setShowDisputeModal(true);
+                  }, 100);
+                }}
+                className="w-full px-4 py-2.5 border border-red-200 bg-red-50 text-red-700 rounded-xl hover:bg-red-100 transition flex items-center justify-center gap-2"
+              >
+                <AlertTriangle className="w-4 h-4" />
+                Report an Issue
+              </button>
             </div>
           </div>
         </div>
@@ -1117,6 +1632,19 @@ export default function WorkerMyJobsPage() {
                       >
                         <Eye className="w-4 h-4" />
                       </button>
+
+                      {/* NEW: Report Issue Button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedJob(job);
+                          setShowDisputeModal(true);
+                        }}
+                        className="px-3 py-2 bg-red-50 text-red-700 text-sm font-medium rounded-lg hover:bg-red-100 transition"
+                        title="Report Issue"
+                      >
+                        <AlertTriangle className="w-4 h-4" />
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -1181,6 +1709,22 @@ export default function WorkerMyJobsPage() {
         <JobDetailModal
           job={selectedJob}
           onClose={() => setShowJobModal(false)}
+        />
+      )}
+
+      {/* Dispute Creation Modal */}
+      {showDisputeModal && selectedJob && (
+        <DisputeCreationModal
+          job={selectedJob}
+          onClose={() => {
+            setShowDisputeModal(false);
+            setSelectedJob(null);
+          }}
+          onSuccess={() => {
+            alert(
+              "✅ Dispute created successfully! An admin will review your case shortly."
+            );
+          }}
         />
       )}
     </div>

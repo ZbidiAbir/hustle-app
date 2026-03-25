@@ -15,6 +15,7 @@ import {
   Menu,
   X,
   ChevronDown,
+  FlagTriangleRight,
 } from "lucide-react";
 import NotificationBell from "@/app/components/NotificationBell";
 import { ToastProvider } from "@/contexts/ToastContext";
@@ -92,6 +93,11 @@ export default function WorkerLayout({
       name: "Messages",
       href: "/worker/dashboard/messages",
       icon: MessageSquare,
+    },
+    {
+      name: " My Disputes",
+      href: "/worker/dashboard/my-disputes",
+      icon: FlagTriangleRight,
     },
     { name: "Settings", href: "/worker/dashboard/profile", icon: Settings },
   ];

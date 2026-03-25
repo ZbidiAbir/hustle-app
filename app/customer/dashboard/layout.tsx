@@ -17,6 +17,7 @@ import {
   ChevronDown,
   Building2,
   Home as HomeIcon,
+  FlagTriangleRight,
 } from "lucide-react";
 import NotificationBell from "@/app/components/NotificationBell";
 import { ToastProvider } from "@/contexts/ToastContext";
@@ -106,6 +107,11 @@ export default function CustomerLayout({
       name: "Messages",
       href: "/customer/dashboard/messages",
       icon: MessageSquare,
+    },
+    {
+      name: " My Disputes",
+      href: "/customer/dashboard/my-disputes",
+      icon: FlagTriangleRight,
     },
     {
       name: "Settings",
