@@ -1,3 +1,4 @@
+// app/customer/layout.tsx
 "use client";
 
 import { useEffect, useState } from "react";
@@ -21,6 +22,8 @@ import {
 } from "lucide-react";
 import NotificationBell from "@/app/components/NotificationBell";
 import { ToastProvider } from "@/contexts/ToastContext";
+import { AuthProvider } from "@/contexts/AuthContext"; // Importer AuthProvider
+import { NotificationsProvider } from "@/contexts/NotificationsContext"; // Importer NotificationsProvider
 import { Profile } from "@/types/profile";
 
 export default function CustomerLayout({
@@ -163,7 +166,8 @@ export default function CustomerLayout({
     );
   }
 
-  return (
+  // Le contenu du layout (sans les providers)
+  const layoutContent = (
     <div className="min-h-screen bg-gray-50">
       {/* Top Navigation Bar */}
       <nav className="bg-white border-b border-gray-200 fixed w-full z-30 top-0">
@@ -410,5 +414,12 @@ export default function CustomerLayout({
         />
       )}
     </div>
+  );
+
+  // Encapsuler tout dans les providers
+  return (
+    <AuthProvider>
+      <NotificationsProvider>{layoutContent}</NotificationsProvider>
+    </AuthProvider>
   );
 }

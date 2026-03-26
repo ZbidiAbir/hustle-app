@@ -19,7 +19,23 @@ export const messageService = {
     const { data: jobs, error: jobsError } = await supabase
       .from("jobs")
       .select(
-        "id, title, status, price, location, date, customer_id, worker_id"
+        `
+        id, 
+        title, 
+        status, 
+        price, 
+        location, 
+        date, 
+        customer_id, 
+        worker_id, 
+        pay_type, 
+        fixed_rate, 
+        min_rate, 
+        max_rate, 
+        hourly_rate,
+        created_at,
+        category
+      `
       )
       .or(`customer_id.eq.${userId},worker_id.eq.${userId}`)
       .not("worker_id", "is", null)
@@ -42,6 +58,7 @@ export const messageService = {
 
         return {
           id: job.id,
+          jobId: job.id,
           jobTitle: job.title,
           otherUser,
           lastMessage: lastMessage || undefined,
@@ -50,11 +67,18 @@ export const messageService = {
           price: job.price,
           location: job.location,
           date: job.date,
+          createdAt: job.created_at,
+          pay_type: job.pay_type,
+          fixed_rate: job.fixed_rate,
+          min_rate: job.min_rate,
+          max_rate: job.max_rate,
+          hourly_rate: job.hourly_rate,
+          category: job.category,
         };
       })
     );
-    //@ts-ignore
-    return conversations;
+
+    return conversations as Conversation[];
   },
 
   // Récupérer le profil d'un utilisateur
@@ -66,39 +90,52 @@ export const messageService = {
       .single();
 
     if (error) throw error;
-    //@ts-ignore
 
     return {
       ...data,
-      avatar_url: data.avatar_url || null, // Si pas d'avatar, mettre null
-    };
+      avatar_url: data.avatar_url || null,
+    } as Profile;
   },
 
-  // Récupérer le dernier message d'un job
+  // Récupérer le dernier message d'un job - CORRIGÉ
   async fetchLastMessage(jobId: string) {
-    const { data, error } = await supabase
-      .from("messages")
-      .select("*")
-      .eq("job_id", jobId)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .single();
+    try {
+      const { data, error } = await supabase
+        .from("messages")
+        .select("*")
+        .eq("job_id", jobId)
+        .order("created_at", { ascending: false })
+        .limit(1);
 
-    if (error && error.code !== "PGRST116") throw error;
-    return data;
+      if (error) {
+        console.error("Error fetching last message:", error);
+        return null;
+      }
+
+      // Retourner le premier message s'il existe, sinon null
+      return data && data.length > 0 ? data[0] : null;
+    } catch (error) {
+      console.error("Error in fetchLastMessage:", error);
+      return null;
+    }
   },
 
   // Compter les messages non lus
   async fetchUnreadCount(jobId: string, userId: string): Promise<number> {
-    const { count, error } = await supabase
-      .from("messages")
-      .select("*", { count: "exact", head: true })
-      .eq("job_id", jobId)
-      .eq("read", false)
-      .neq("sender_id", userId);
+    try {
+      const { count, error } = await supabase
+        .from("messages")
+        .select("*", { count: "exact", head: true })
+        .eq("job_id", jobId)
+        .eq("read", false)
+        .neq("sender_id", userId);
 
-    if (error) throw error;
-    return count || 0;
+      if (error) throw error;
+      return count || 0;
+    } catch (error) {
+      console.error("Error fetching unread count:", error);
+      return 0;
+    }
   },
 
   // Récupérer les messages d'une conversation
@@ -106,32 +143,45 @@ export const messageService = {
     jobId: string,
     currentUserId: string
   ): Promise<Message[]> {
-    const { data, error } = await supabase
-      .from("messages")
-      .select("*")
-      .eq("job_id", jobId)
-      .order("created_at", { ascending: true });
+    try {
+      const { data, error } = await supabase
+        .from("messages")
+        .select("*")
+        .eq("job_id", jobId)
+        .order("created_at", { ascending: true });
 
-    if (error) throw error;
-    return data;
+      if (error) throw error;
+      return data as Message[];
+    } catch (error) {
+      console.error("Error fetching messages:", error);
+      return [];
+    }
   },
 
   // Marquer les messages comme lus
   async markMessagesAsRead(jobId: string, userId: string) {
-    const { error } = await supabase
-      .from("messages")
-      .update({ read: true })
-      .eq("job_id", jobId)
-      .neq("sender_id", userId);
+    try {
+      const { error } = await supabase
+        .from("messages")
+        .update({ read: true })
+        .eq("job_id", jobId)
+        .neq("sender_id", userId);
 
-    if (error) throw error;
+      if (error) throw error;
+    } catch (error) {
+      console.error("Error marking messages as read:", error);
+    }
   },
 
   // Envoyer un message
   async sendMessage(messageData: SendMessageData) {
-    const { error } = await supabase.from("messages").insert([messageData]);
-
-    if (error) throw error;
+    try {
+      const { error } = await supabase.from("messages").insert([messageData]);
+      if (error) throw error;
+    } catch (error) {
+      console.error("Error sending message:", error);
+      throw error;
+    }
   },
 
   // S'abonner aux nouveaux messages

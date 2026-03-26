@@ -659,7 +659,7 @@ export default function AdminApplicationDetailPage() {
 
       {/* Main Content */}
       <div className="px-4 sm:px-6 lg:px-8 py-6">
-        <div className="max-w-7xl mx-auto">
+        <div className="">
           {/* Tabs */}
           <div className="flex gap-4 mb-6 border-b overflow-x-auto pb-1">
             <button
@@ -1235,44 +1235,6 @@ export default function AdminApplicationDetailPage() {
                         <p className="text-sm text-gray-500">No messages yet</p>
                       </div>
                     )}
-                  </div>
-
-                  {/* Reply Box */}
-                  <div className="p-4 border-t border-gray-200 bg-white">
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={newMessage}
-                        onChange={(e) => setNewMessage(e.target.value)}
-                        onKeyPress={(e) =>
-                          e.key === "Enter" && handleSendMessage()
-                        }
-                        placeholder="Type your message as admin..."
-                        className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        disabled={sendingMessage}
-                      />
-                      <button
-                        onClick={handleSendMessage}
-                        disabled={sendingMessage || !newMessage.trim()}
-                        className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition flex items-center gap-2 disabled:opacity-50"
-                      >
-                        {sendingMessage ? (
-                          <>
-                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-                            Sending...
-                          </>
-                        ) : (
-                          <>
-                            <Send className="w-4 h-4" />
-                            Send
-                          </>
-                        )}
-                      </button>
-                    </div>
-                    <p className="text-xs text-gray-400 mt-2">
-                      Messages will be sent as admin and visible to all
-                      participants
-                    </p>
                   </div>
                 </div>
               )}

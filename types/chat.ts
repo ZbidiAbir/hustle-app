@@ -16,7 +16,7 @@ export type Job = {
   description: string;
   customer_id: string;
   worker_id: string | null; // <- worker_id est requis ici
-
+  category: string;
   status: "open" | "assigned" | "in_progress" | "completed" | "cancelled";
   price: number;
   location: string;
@@ -25,6 +25,11 @@ export type Job = {
   urgency?: string;
   level_required?: string;
   skills?: string[];
+  pay_type?: string;
+  fixed_rate?: number;
+  min_rate?: number;
+  max_rate?: number;
+  hourly_rate?: number;
 };
 
 export type Customer = Profile & {
@@ -60,6 +65,13 @@ export type Conversation = {
   jobTitle: string;
   customer: Customer;
   worker: Worker;
+  pay_type?: string; // Ajouter pay_type
+  fixed_rate?: number; // Ajouter fixed_rate
+  min_rate?: number; // Ajouter min_rate
+  max_rate?: number; // Ajouter max_rate
+  hourly_rate?: number; // Ajouter hourly_rate
+  category?: string; // Ajouter category
+
   lastMessage?: {
     content: string;
     created_at: string;

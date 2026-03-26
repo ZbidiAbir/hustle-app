@@ -25,6 +25,7 @@ type Job = {
   status: string;
   price: number;
   location: string;
+  category: string;
 };
 
 type Worker = {
@@ -461,17 +462,28 @@ export default function CustomerChatPage() {
               {workers.length > 0 && selectedWorker ? (
                 <div className="flex items-center gap-3">
                   {/* Selected worker avatar */}
+                  {/* Selected worker avatar in header - FIXED */}
                   <div
                     className="relative cursor-pointer"
                     onClick={() => setShowWorkerSelector(!showWorkerSelector)}
                   >
-                    <div
-                      className={`w-12 h-12 rounded-full ${getAvatarColor(
-                        selectedWorker?.id || ""
-                      )} flex items-center justify-center text-white font-bold text-lg shadow-md`}
-                    >
-                      {selectedWorker?.full_name?.charAt(0).toUpperCase() ||
-                        "W"}
+                    <div className="w-12 h-12 rounded-full overflow-hidden bg-gray-200 shadow-md">
+                      {selectedWorker?.avatar_url ? (
+                        <img
+                          src={selectedWorker.avatar_url}
+                          alt={selectedWorker.full_name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div
+                          className={`w-full h-full ${getAvatarColor(
+                            selectedWorker.id
+                          )} flex items-center justify-center text-white font-bold text-lg`}
+                        >
+                          {selectedWorker?.full_name?.charAt(0).toUpperCase() ||
+                            "W"}
+                        </div>
+                      )}
                     </div>
                     {workers.length > 1 && (
                       <div className="absolute -bottom-1 -right-1 bg-blue-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center border-2 border-white">
@@ -499,12 +511,22 @@ export default function CustomerChatPage() {
                                 : ""
                             }`}
                           >
-                            <div
-                              className={`w-8 h-8 rounded-full ${getAvatarColor(
-                                worker.id
-                              )} flex items-center justify-center text-white text-xs font-medium`}
-                            >
-                              {worker.full_name.charAt(0).toUpperCase()}
+                            <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-medium overflow-hidden bg-gray-200">
+                              {worker.avatar_url ? (
+                                <img
+                                  src={worker.avatar_url}
+                                  alt={worker.full_name}
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                <div
+                                  className={`w-full h-full ${getAvatarColor(
+                                    worker.id
+                                  )} flex items-center justify-center`}
+                                >
+                                  {worker.full_name.charAt(0).toUpperCase()}
+                                </div>
+                              )}
                             </div>
                             <div className="flex-1 text-left">
                               <p className="text-sm font-medium text-gray-900">
@@ -530,7 +552,7 @@ export default function CustomerChatPage() {
                         •
                       </span>
                       <span className="text-sm font-normal text-gray-500">
-                        ${job.price}
+                        {job.category}
                       </span>
                     </h1>
                     <div className="flex items-center gap-2">
@@ -579,6 +601,7 @@ export default function CustomerChatPage() {
                   : "bg-gray-100 text-gray-800"
               }`}
             >
+              Job:
               {job.status === "open"
                 ? "🔍 Open"
                 : job.status === "assigned"
@@ -650,7 +673,7 @@ export default function CustomerChatPage() {
                     >
                       {/* Avatar for worker messages */}
                       {!isMine && showAvatar && senderWorker && (
-                        <div className="w-12 h-12 rounded-full bg-gray flex items-center justify-center text-white font-bold text-lg">
+                        <div className="w-8 h-8 rounded-full bg-gray flex items-center justify-center text-white font-bold text-lg">
                           {senderWorker.avatar_url ? (
                             <img
                               src={senderWorker.avatar_url}
@@ -701,22 +724,6 @@ export default function CustomerChatPage() {
                       </div>
 
                       {/* Avatar for user messages */}
-                      {isMine && currentUser && (
-                        <div className="w-12 h-12 rounded-full bg-gray flex items-center justify-center text-white font-bold text-lg">
-                          {currentUser.avatar_url ? (
-                            <img
-                              src={currentUser.avatar_url}
-                              alt=""
-                              className="w-full h-full rounded-full object-cover"
-                            />
-                          ) : (
-                            <div className="w-full h-full rounded-full bg-linear-to-br from-green-500 to-teal-500 flex items-center justify-center text-white font-bold text-lg">
-                              {currentUser.email?.charAt(0).toUpperCase() ||
-                                "U"}
-                            </div>
-                          )}
-                        </div>
-                      )}
                     </div>
                   </div>
                 </div>
@@ -775,19 +782,6 @@ export default function CustomerChatPage() {
               ) : (
                 <>
                   <span>Send</span>
-                  <svg
-                    className="w-4 h-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
-                    />
-                  </svg>
                 </>
               )}
             </button>

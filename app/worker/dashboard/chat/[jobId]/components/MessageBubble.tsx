@@ -74,11 +74,6 @@ export function MessageBubble({
         </div>
 
         {/* My Avatar */}
-        {isMine && (
-          <div className="w-8 h-8 rounded-full bg-linear-to-r from-green-500 to-purple-500 shrink-0 flex items-center justify-center text-white text-xs font-medium shadow-sm">
-            {currentUser?.email?.charAt(0).toUpperCase() || "M"}
-          </div>
-        )}
       </div>
     </div>
   );

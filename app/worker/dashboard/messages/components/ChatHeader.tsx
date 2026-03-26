@@ -10,6 +10,8 @@ import {
   BadgeCheck,
   Briefcase,
   DollarSign,
+  Clock,
+  TrendingUp,
 } from "lucide-react";
 import {
   getAvatarColor,
@@ -24,6 +26,93 @@ interface ChatHeaderProps {
   onInfoClick?: () => void;
 }
 
+// Fonction pour formater le prix selon le type
+const formatJobPrice = (conversation: Conversation) => {
+  const { pay_type, fixed_rate, min_rate, max_rate, hourly_rate, price } =
+    conversation;
+
+  // Si pas de pay_type, utiliser l'ancien champ price
+  if (!pay_type) {
+    return price ? `$${price}` : null;
+  }
+
+  const type = String(pay_type).toLowerCase().trim();
+
+  switch (type) {
+    case "fixed":
+      if (fixed_rate) {
+        return `$${fixed_rate}`;
+      }
+      return price ? `$${price}` : null;
+
+    case "range":
+      if (min_rate && max_rate) {
+        return `$${min_rate} - $${max_rate}`;
+      }
+      if (min_rate) {
+        return `From $${min_rate}`;
+      }
+      if (max_rate) {
+        return `Up to $${max_rate}`;
+      }
+      return price ? `$${price}` : null;
+
+    case "hourly":
+      if (hourly_rate) {
+        return `$${hourly_rate}/hr`;
+      }
+      return price ? `$${price}/hr` : null;
+
+    default:
+      return price ? `$${price}` : null;
+  }
+};
+
+// Fonction pour obtenir l'icône et le label du type de prix
+const getPriceTypeInfo = (conversation: Conversation) => {
+  if (!conversation.pay_type) {
+    return {
+      icon: DollarSign,
+      label: "Price",
+      color: "text-gray-500",
+      bg: "bg-gray-50",
+    };
+  }
+
+  const type = String(conversation.pay_type).toLowerCase().trim();
+
+  switch (type) {
+    case "fixed":
+      return {
+        icon: DollarSign,
+        label: "Fixed price",
+        color: "text-green-600",
+        bg: "bg-green-50",
+      };
+    case "range":
+      return {
+        icon: TrendingUp,
+        label: "Price range",
+        color: "text-blue-600",
+        bg: "bg-blue-50",
+      };
+    case "hourly":
+      return {
+        icon: Clock,
+        label: "Hourly rate",
+        color: "text-purple-600",
+        bg: "bg-purple-50",
+      };
+    default:
+      return {
+        icon: DollarSign,
+        label: "Price",
+        color: "text-gray-500",
+        bg: "bg-gray-50",
+      };
+  }
+};
+
 export function ChatHeader({
   conversation,
   customer,
@@ -33,6 +122,10 @@ export function ChatHeader({
   const customerDisplayName = getCustomerDisplayName(customer);
   const customerAvatar = getCustomerAvatar(customer);
   const isBusiness = customer.account_type === "smallbusiness";
+
+  const priceDisplay = formatJobPrice(conversation);
+  const priceTypeInfo = getPriceTypeInfo(conversation);
+  const PriceIcon = priceTypeInfo.icon;
 
   return (
     <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
@@ -71,24 +164,45 @@ export function ChatHeader({
 
         {/* Info */}
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <h2 className="font-semibold text-gray-900">
-              {customerDisplayName}
+              {customer.company_name || customer.full_name}
             </h2>
-            {isBusiness && <Building2 className="w-4 h-4 text-gray-400" />}
-            {customer.rating && (
-              <div className="flex items-center gap-1">
-                <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
-                <span className="text-xs text-gray-600">{customer.rating}</span>
-              </div>
+            {customer.full_name && customer.company_name && (
+              <p className="text-xs text-gray-500">
+                Hiring Team ({customer.full_name})
+              </p>
             )}
+            {isBusiness && <Building2 className="w-4 h-4 text-gray-400" />}
           </div>
-          <div className="flex items-center gap-2 text-xs text-gray-500">
-            <Briefcase className="w-3 h-3" />
-            <span className="truncate max-w-37.5">{conversation.jobTitle}</span>
-            <span>•</span>
-            <DollarSign className="w-3 h-3" />
-            <span>${conversation.price}</span>
+          <div className="flex items-center gap-2 text-xs text-gray-500 flex-wrap">
+            <Briefcase className="w-3 h-3 shrink-0" />
+            <span className="">{conversation.jobTitle}</span>
+
+            {conversation.category && (
+              <>
+                <span className="w-1 h-1 bg-gray-300 rounded-full" />
+                <span className="rounded-full px-2 py-0.5 bg-gray-100 text-gray-600 text-xs">
+                  {conversation.category}
+                </span>
+              </>
+            )}
+
+            {priceDisplay && (
+              <>
+                <span className="w-1 h-1 bg-gray-300 rounded-full" />
+                <div
+                  className={`flex items-center gap-1 px-2 py-0.5 rounded-full ${priceTypeInfo.bg}`}
+                >
+                  <PriceIcon className={`w-3 h-3 ${priceTypeInfo.color}`} />
+                  <span
+                    className={`text-xs font-medium ${priceTypeInfo.color}`}
+                  >
+                    {priceDisplay}
+                  </span>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>

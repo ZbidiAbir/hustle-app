@@ -22,7 +22,7 @@ export function JobStatusBar({ job, hasApplied, onApply }: JobStatusBarProps) {
           job.status
         )}`}
       >
-        {getJobStatusText(job.status)}
+        Job {getJobStatusText(job.status)}
       </span>
       {!hasApplied && job.status === "open" && (
         <button

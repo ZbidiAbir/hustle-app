@@ -30,6 +30,9 @@ import {
   FileCode,
   FileJson,
   ZoomIn,
+  Check,
+  UserCheck,
+  Award,
 } from "lucide-react";
 import { DisputeWithDetails } from "../page";
 
@@ -48,6 +51,30 @@ interface EvidenceItem {
   isSecureImage: boolean;
 }
 
+interface ResolutionDetails {
+  resolved_by_user?: {
+    full_name: string;
+    role: string;
+    email: string;
+  } | null;
+  resolution_notes?: string | null;
+  resolved_at?: string | null;
+  status_history?: Array<{
+    status: string;
+    changed_at: string;
+    changed_by: string;
+    notes?: string;
+  }> | null;
+  approved_by_user?: {
+    full_name: string;
+    role: string;
+  } | null;
+  reviewed_by_user?: {
+    full_name: string;
+    role: string;
+  } | null;
+}
+
 export function DisputeModal({
   dispute,
   onClose,
@@ -59,6 +86,9 @@ export function DisputeModal({
   const [imageLoadErrors, setImageLoadErrors] = useState<Set<string>>(
     new Set()
   );
+  const [resolutionDetails, setResolutionDetails] =
+    useState<ResolutionDetails | null>(null);
+  const [loadingResolution, setLoadingResolution] = useState(false);
 
   useEffect(() => {
     // Traiter les preuves au chargement du modal
@@ -84,7 +114,86 @@ export function DisputeModal({
         checkFileAccess(item, index);
       });
     }
-  }, [dispute.evidence]);
+
+    // Charger les détails de résolution si le statut est resolved
+    if (dispute.status === "resolved" || dispute.status === "review_approved") {
+      fetchResolutionDetails();
+    }
+  }, [dispute.evidence, dispute.status, dispute.id]);
+
+  const fetchResolutionDetails = async () => {
+    setLoadingResolution(true);
+    try {
+      // Récupérer les informations du résolveur
+      let resolvedByUser = null;
+      if (dispute.resolved_by) {
+        const { data: userData, error } = await supabase
+          .from("profiles")
+          .select("id, full_name, role, email")
+          .eq("id", dispute.resolved_by)
+          .single();
+
+        if (!error && userData) {
+          resolvedByUser = {
+            full_name: userData.full_name || "Unknown",
+            role: userData.role || "Admin",
+            email: userData.email || "",
+          };
+        }
+      }
+
+      // Récupérer les informations de l'approbateur si review_approved
+      // Note: Utiliser resolved_by comme approbateur si approved_by n'existe pas
+      let approvedByUser = null;
+      if (dispute.status === "review_approved" && dispute.resolved_by) {
+        const { data: userData, error } = await supabase
+          .from("profiles")
+          .select("id, full_name, role")
+          .eq("id", dispute.resolved_by)
+          .single();
+
+        if (!error && userData) {
+          approvedByUser = {
+            full_name: userData.full_name || "Unknown",
+            role: userData.role || "Admin",
+          };
+        }
+      }
+
+      // Récupérer les informations du reviewer
+      // Note: Utiliser created_by comme reviewer si reviewed_by n'existe pas
+      let reviewedByUser = null;
+      if (dispute.status === "under_review" && dispute.created_by) {
+        const { data: userData, error } = await supabase
+          .from("profiles")
+          .select("id, full_name, role")
+          .eq("id", dispute.created_by)
+          .single();
+
+        if (!error && userData) {
+          reviewedByUser = {
+            full_name: userData.full_name || "Unknown",
+            role: userData.role || "User",
+          };
+        }
+      }
+
+      setResolutionDetails({
+        resolved_by_user: resolvedByUser,
+        resolution_notes: dispute.resolution_notes,
+        resolved_at: dispute.resolved_at,
+        status_history:
+          //@ts-ignore
+          dispute?.status_history,
+        approved_by_user: approvedByUser,
+        reviewed_by_user: reviewedByUser,
+      });
+    } catch (error) {
+      console.error("Error fetching resolution details:", error);
+    } finally {
+      setLoadingResolution(false);
+    }
+  };
 
   const getFileNameFromUrl = (url: string): string => {
     try {
@@ -274,6 +383,13 @@ export function DisputeModal({
             Under Review
           </span>
         );
+      case "review_approved":
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 text-purple-800 rounded-full text-xs font-medium">
+            <CheckCircle className="w-3 h-3" />
+            Review Approved
+          </span>
+        );
       case "resolved":
         return (
           <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-medium">
@@ -341,7 +457,7 @@ export function DisputeModal({
     );
   };
 
-  const formatDate = (dateString?: string) => {
+  const formatDate = (dateString?: string | null) => {
     if (!dateString) return "N/A";
     try {
       const date = new Date(dateString);
@@ -360,6 +476,10 @@ export function DisputeModal({
   const images = evidenceItems.filter((item) => isImage(item.type));
   const documents = evidenceItems.filter((item) => !isImage(item.type));
   const displayImages = expandedEvidence ? images : images.slice(0, 4);
+
+  // Vérifier si le litige est résolu ou approuvé
+  const isResolved =
+    dispute.status === "resolved" || dispute.status === "review_approved";
 
   return (
     <>
@@ -512,6 +632,109 @@ export function DisputeModal({
                 {dispute.preferred_resolution}
               </p>
             </div>
+
+            {/* RESOLUTION SECTION - Afficher uniquement si le litige est résolu */}
+            {isResolved && (
+              <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-4 border border-green-200">
+                <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                  <CheckCircle className="w-5 h-5 text-green-600" />
+                  Resolution Details
+                </h3>
+
+                {loadingResolution ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-8 h-8 text-green-500 animate-spin" />
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {/* Resolution Notes */}
+                    {resolutionDetails?.resolution_notes && (
+                      <div className="bg-white rounded-lg p-4">
+                        <p className="text-xs text-gray-500 mb-2 flex items-center gap-1">
+                          <FileText className="w-3 h-3" />
+                          Resolution Notes
+                        </p>
+                        <p className="text-sm text-gray-800 whitespace-pre-wrap">
+                          {resolutionDetails.resolution_notes}
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Resolved By */}
+                      {resolutionDetails?.resolved_by_user && (
+                        <div className="bg-white rounded-lg p-3">
+                          <p className="text-xs text-gray-500 mb-2 flex items-center gap-1">
+                            <UserCheck className="w-3 h-3 text-green-600" />
+                            Resolved By
+                          </p>
+                          <p className="text-sm font-medium text-gray-900">
+                            {resolutionDetails.resolved_by_user.full_name}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {resolutionDetails.resolved_by_user.role}
+                          </p>
+                          {resolutionDetails.resolved_by_user.email && (
+                            <p className="text-xs text-gray-400 mt-1">
+                              {resolutionDetails.resolved_by_user.email}
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Resolved At */}
+                      {resolutionDetails?.resolved_at && (
+                        <div className="bg-white rounded-lg p-3">
+                          <p className="text-xs text-gray-500 mb-2 flex items-center gap-1">
+                            <Calendar className="w-3 h-3 text-green-600" />
+                            Resolved On
+                          </p>
+                          <p className="text-sm font-medium text-gray-900">
+                            {formatDate(resolutionDetails.resolved_at)}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Review and Approval Info */}
+                    {(resolutionDetails?.reviewed_by_user ||
+                      resolutionDetails?.approved_by_user) && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {resolutionDetails?.reviewed_by_user && (
+                          <div className="bg-white rounded-lg p-3">
+                            <p className="text-xs text-gray-500 mb-2 flex items-center gap-1">
+                              <Award className="w-3 h-3 text-purple-600" />
+                              Reviewed By
+                            </p>
+                            <p className="text-sm font-medium text-gray-900">
+                              {resolutionDetails.reviewed_by_user.full_name}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {resolutionDetails.reviewed_by_user.role}
+                            </p>
+                          </div>
+                        )}
+
+                        {resolutionDetails?.approved_by_user && (
+                          <div className="bg-white rounded-lg p-3">
+                            <p className="text-xs text-gray-500 mb-2 flex items-center gap-1">
+                              <CheckCircle className="w-3 h-3 text-blue-600" />
+                              Approved By
+                            </p>
+                            <p className="text-sm font-medium text-gray-900">
+                              {resolutionDetails.approved_by_user.full_name}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {resolutionDetails.approved_by_user.role}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Evidence Section */}
             {evidenceItems.length > 0 && (

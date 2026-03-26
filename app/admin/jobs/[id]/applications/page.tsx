@@ -494,7 +494,7 @@ export default function JobApplicationsPage() {
 
       {/* Main Content */}
       <div className="px-4 sm:px-6 lg:px-8 py-6">
-        <div className="max-w-7xl mx-auto space-y-6">
+        <div className=" space-y-6">
           {/* Job Info Card */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">

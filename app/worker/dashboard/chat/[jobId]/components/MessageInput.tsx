@@ -64,20 +64,6 @@ export function MessageInput({
     <div className="bg-white border-t border-gray-200 p-4">
       <div className="">
         <form onSubmit={handleSubmit} className="flex items-center gap-2">
-          <button
-            type="button"
-            className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 transition"
-            title="Attach file"
-          >
-            <Paperclip className="w-5 h-5" />
-          </button>
-          <button
-            type="button"
-            className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 transition"
-            title="Upload image"
-          >
-            <ImageIcon className="w-5 h-5" />
-          </button>
           <input
             ref={inputRef}
             type="text"
@@ -99,13 +85,7 @@ export function MessageInput({
               }
             }}
           />
-          <button
-            type="button"
-            className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 transition"
-            title="Add emoji"
-          >
-            <Smile className="w-5 h-5" />
-          </button>
+
           <button
             type="submit"
             disabled={isSending || !message.trim()}

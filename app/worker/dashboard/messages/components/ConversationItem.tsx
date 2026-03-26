@@ -80,15 +80,6 @@ export function ConversationItem({
             >
               {customerDisplayName}
             </h3>
-            {isBusiness && <Building2 className="w-3.5 h-3.5 text-gray-400" />}
-            {conversation.customer.rating && (
-              <div className="flex items-center gap-0.5 ml-1">
-                <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
-                <span className="text-xs text-gray-600">
-                  {conversation.customer.rating}
-                </span>
-              </div>
-            )}
           </div>
           {conversation.lastMessage && (
             <span className="text-xs text-gray-400 shrink-0">

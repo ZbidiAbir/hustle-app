@@ -18,7 +18,7 @@ export function useConversations(userId: string) {
         const { data: jobsData, error: jobsError } = await supabase
           .from("jobs")
           .select(
-            "id, title, status, price, location, customer_id, description, images, urgency, level_required, skills, created_at"
+            "id, title, status, price, location, customer_id, description, images, urgency, level_required, skills, created_at, category, pay_type, fixed_rate,min_rate,max_rate,hourly_rate"
           )
           .eq("worker_id", userId)
           .order("created_at", { ascending: false });
@@ -87,6 +87,12 @@ export function useConversations(userId: string) {
               price: job.price,
               location: job.location,
               createdAt: job.created_at,
+              category: job.category,
+              pay_type: job.pay_type,
+              fixed_rate: job.fixed_rate,
+              min_rate: job.min_rate,
+              max_rate: job.max_rate,
+              hourly_rate: job.hourly_rate,
               jobDetails: {
                 description: job.description,
                 images: job.images,

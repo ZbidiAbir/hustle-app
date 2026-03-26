@@ -537,7 +537,7 @@ export default function AdminApplicationsPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-7xl mx-auto space-y-6 px-4 sm:px-6 lg:px-8">
+      <div className="space-y-6 ">
         {/* Header */}
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">
@@ -724,14 +724,6 @@ export default function AdminApplicationsPage() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="px-4 py-3 text-left">
-                    <input
-                      type="checkbox"
-                      checked={selectAll}
-                      onChange={handleSelectAll}
-                      className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
-                    />
-                  </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Worker
                   </th>
@@ -765,14 +757,6 @@ export default function AdminApplicationsPage() {
 
                   return (
                     <tr key={app.id} className="hover:bg-gray-50 transition">
-                      <td className="px-4 py-3">
-                        <input
-                          type="checkbox"
-                          checked={selectedApplications.includes(app.id)}
-                          onChange={() => handleSelectApplication(app.id)}
-                          className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
-                        />
-                      </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           <div
@@ -891,55 +875,6 @@ export default function AdminApplicationsPage() {
                           >
                             <Eye className="w-4 h-4 text-gray-500" />
                           </Link>
-                          <Link
-                            href={`/admin/messages?job=${app.job_id}&worker=${app.worker_id}`}
-                            className="p-1.5 hover:bg-gray-100 rounded-lg transition"
-                            title="View conversation"
-                          >
-                            <MessageSquare className="w-4 h-4 text-gray-500" />
-                          </Link>
-                          <div className="relative group">
-                            <button className="p-1.5 hover:bg-gray-100 rounded-lg transition">
-                              <MoreHorizontal className="w-4 h-4 text-gray-500" />
-                            </button>
-                            <div className="absolute right-0 mt-1 w-48 bg-white rounded-lg shadow-lg border hidden group-hover:block z-10">
-                              <div className="py-1">
-                                {app.status !== "accepted" && (
-                                  <button
-                                    onClick={() =>
-                                      handleStatusChange(app.id, "accepted")
-                                    }
-                                    className="w-full text-left px-4 py-2 text-sm text-emerald-600 hover:bg-emerald-50 flex items-center gap-2"
-                                  >
-                                    <CheckCircle className="w-4 h-4" />
-                                    Accept Application
-                                  </button>
-                                )}
-                                {app.status !== "rejected" && (
-                                  <button
-                                    onClick={() =>
-                                      handleStatusChange(app.id, "rejected")
-                                    }
-                                    className="w-full text-left px-4 py-2 text-sm text-rose-600 hover:bg-rose-50 flex items-center gap-2"
-                                  >
-                                    <XCircle className="w-4 h-4" />
-                                    Reject Application
-                                  </button>
-                                )}
-                                {app.status !== "pending" && (
-                                  <button
-                                    onClick={() =>
-                                      handleStatusChange(app.id, "pending")
-                                    }
-                                    className="w-full text-left px-4 py-2 text-sm text-amber-600 hover:bg-amber-50 flex items-center gap-2"
-                                  >
-                                    <Clock className="w-4 h-4" />
-                                    Mark Pending
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          </div>
                         </div>
                       </td>
                     </tr>

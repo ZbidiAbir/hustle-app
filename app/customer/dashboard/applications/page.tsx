@@ -95,10 +95,7 @@ function WorkerRatingDisplay({
 }) {
   if (!rating || rating === 0) {
     return (
-      <div className="flex items-center gap-1 px-2 py-0.5 bg-gray-100 rounded-full">
-        <Star className="w-3 h-3 text-gray-400" />
-        <span className="text-xs text-gray-500">New</span>
-      </div>
+      <div className="flex items-center gap-1 px-2 py-0.5 bg-gray-100 rounded-full"></div>
     );
   }
 

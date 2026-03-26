@@ -25,13 +25,25 @@ export type Job = {
   customer_id: string;
   worker_id: string | null;
   status: "open" | "assigned" | "in_progress" | "completed" | "cancelled";
-  price: number;
+  price: number; // Keep for backward compatibility
   location: string;
   images?: string[];
   created_at: string;
   urgency?: string;
   level_required?: string;
   skills?: string[];
+  category?: string;
+  building_access?: string;
+  project_size?: string;
+  date?: string;
+  time_slot?: string;
+  materials_provided?: boolean;
+  pay_type?: "fixed" | "range" | "hourly"; // Added from your schema
+  fixed_rate?: number; // For fixed pay_type
+  min_rate?: number; // For range pay_type
+  max_rate?: number; // For range pay_type
+  hourly_rate?: number; // For hourly pay_type
+  coi_url?: string;
 };
 
 export type Customer = Profile & {
@@ -67,9 +79,10 @@ export type User = {
   };
 };
 
+// Dans types/messages.types.ts
 export type Conversation = {
   id: string;
-  jobId: string;
+  jobId?: string; // Si vous voulez garder jobId, sinon utilisez id
   jobTitle: string;
   otherUser: Profile;
   lastMessage?: {
@@ -82,17 +95,25 @@ export type Conversation = {
   status: Job["status"];
   price: number;
   location: string;
-  createdAt: string;
+  createdAt?: string;
   date?: string;
+  category?: string;
+
+  // AJOUTER CES CHAMPS DE VOTRE TABLE jobs
+  pay_type?: string | null;
+  fixed_rate?: number | null;
+  min_rate?: number | null;
+  max_rate?: number | null;
+  hourly_rate?: number | null;
   jobDetails?: {
     description?: string;
     images?: string[];
     urgency?: string;
     level_required?: string;
     skills?: string[];
+    category?: string;
   };
 };
-
 export type CurrentUser = {
   id: string;
   email: string;

@@ -278,15 +278,6 @@ export function ApplicationCard({
             <span>Details</span>
             <ChevronRight className="w-4 h-4" />
           </Link>
-          {(app.customer?.phone || app.customer?.company_phone) && (
-            <a
-              href={`tel:${app.customer.company_phone || app.customer.phone}`}
-              className="px-3 py-2 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition flex items-center justify-center"
-              title="Call customer"
-            >
-              <Phone className="w-4 h-4" />
-            </a>
-          )}
         </div>
       </div>
     </div>

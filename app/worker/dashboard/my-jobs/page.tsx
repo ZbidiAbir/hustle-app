@@ -1249,21 +1249,20 @@ export default function WorkerMyJobsPage() {
             </div>
 
             {/* Report Issue Button */}
-            <div className="mt-3">
+            {/* Report Issue Button - UNIQUEMENT POUR LES JOBS COMPLETED */}
+            {job.status === "completed" && (
               <button
-                onClick={() => {
-                  onClose();
-                  setTimeout(() => {
-                    setSelectedJob(job);
-                    setShowDisputeModal(true);
-                  }, 100);
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedJob(job);
+                  setShowDisputeModal(true);
                 }}
-                className="w-full px-4 py-2.5 border border-red-200 bg-red-50 text-red-700 rounded-xl hover:bg-red-100 transition flex items-center justify-center gap-2"
+                className="px-3 py-2 bg-red-50 text-red-700 text-sm font-medium rounded-lg hover:bg-red-100 transition"
+                title="Report Issue"
               >
                 <AlertTriangle className="w-4 h-4" />
-                Report an Issue
               </button>
-            </div>
+            )}
           </div>
         </div>
       </div>
@@ -1272,7 +1271,7 @@ export default function WorkerMyJobsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-linear-to-br from-gray-50 via-white to-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="relative">
             <div className="w-20 h-20 border-4 border-gray-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-6" />
@@ -1633,18 +1632,20 @@ export default function WorkerMyJobsPage() {
                         <Eye className="w-4 h-4" />
                       </button>
 
-                      {/* NEW: Report Issue Button */}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedJob(job);
-                          setShowDisputeModal(true);
-                        }}
-                        className="px-3 py-2 bg-red-50 text-red-700 text-sm font-medium rounded-lg hover:bg-red-100 transition"
-                        title="Report Issue"
-                      >
-                        <AlertTriangle className="w-4 h-4" />
-                      </button>
+                      {/* Report Issue Button - UNIQUEMENT POUR LES JOBS COMPLETED */}
+                      {job.status === "completed" && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedJob(job);
+                            setShowDisputeModal(true);
+                          }}
+                          className="px-3 py-2 bg-red-50 text-red-700 text-sm font-medium rounded-lg hover:bg-red-100 transition"
+                          title="Report Issue"
+                        >
+                          <AlertTriangle className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>

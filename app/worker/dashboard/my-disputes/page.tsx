@@ -38,7 +38,12 @@ export type Dispute = {
   description: string;
   preferred_resolution: string;
   evidence: string[];
-  status: "pending" | "under_review" | "resolved" | "dismissed";
+  status:
+    | "pending"
+    | "under_review"
+    | "resolved"
+    | "dismissed"
+    | "review_approved";
   resolved_by: string | null;
   resolution_notes: string | null;
   resolved_at: string | null;
@@ -562,7 +567,7 @@ export default function AdminDisputesPage() {
 
       {/* Main Content */}
       <div className="px-4 sm:px-6 lg:px-8 py-6">
-        <div className="max-w-7xl mx-auto space-y-6">
+        <div className=" space-y-6">
           {/* Stats Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
             <StatCard

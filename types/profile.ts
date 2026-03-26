@@ -53,6 +53,12 @@ export interface Profile {
 
   created_at: string;
   updated_at: string;
+  rating: number | null;
+  // Ajoutez ces champs pour les statistiques
+  jobs_completed?: number;
+  member_since?: string;
+  reviews_count?: number;
+  response_rate?: number;
 }
 
 export interface WorkExperience {
