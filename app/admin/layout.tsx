@@ -24,7 +24,9 @@ import {
   MessageSquare,
   FlagTriangleRight,
 } from "lucide-react";
-
+import NotificationBell from "@/app/components/NotificationBell";
+import { ToastProvider } from "@/contexts/ToastContext";
+import NotificationToast from "../components/NotificationToast";
 type User = {
   full_name: string;
   email: string;
@@ -228,7 +230,7 @@ export default function AdminLayout({
 
             <div className="flex items-center gap-3">
               <button className="relative p-2 rounded-lg hover:bg-gray-100">
-                <Bell className="w-5 h-5 text-gray-600" />
+                <NotificationBell />
                 {stats.reportedContent > 0 && (
                   <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 rounded-full border-2 border-white flex items-center justify-center">
                     <span className="text-xs text-white font-medium">
@@ -373,7 +375,10 @@ export default function AdminLayout({
 
       {/* Main content */}
       <main className="lg:pl-64 pt-16 min-h-screen">
-        <div className="p-4 md:p-6">{children}</div>
+        <ToastProvider>
+          {children}
+          <NotificationToast />
+        </ToastProvider>
       </main>
 
       {/* Mobile overlay */}

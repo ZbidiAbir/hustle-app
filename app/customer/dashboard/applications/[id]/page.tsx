@@ -45,7 +45,12 @@ export default function ApplicationDetailPage() {
   const [application, setApplication] = useState<Application | null>(null);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
+  const [statusChanging, setStatusChanging] = useState(false); // Ajouté
   const [showRejectConfirm, setShowRejectConfirm] = useState(false);
+  const [showStatusModal, setShowStatusModal] = useState(false); // Ajouté
+  const [selectedAction, setSelectedAction] = useState<
+    "accept" | "reject" | null
+  >(null); // Ajouté
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [showAllDetails, setShowAllDetails] = useState(false);
   const [completedJobsCount, setCompletedJobsCount] = useState(0);
@@ -150,48 +155,96 @@ export default function ApplicationDetailPage() {
       checkIfHasRated();
     }
   }, [application, currentUser, checkIfHasRated]);
-
-  // Actions
   const handleAccept = async () => {
     if (!application) return;
-    setProcessing(true);
+
     try {
-      await supabase
-        .from("applications")
-        .update({ status: "accepted" })
-        .eq("id", application.id);
-      await supabase
-        .from("applications")
-        .update({ status: "rejected" })
-        .eq("job_id", application.job_id)
-        .neq("id", application.id);
-      await supabase
-        .from("jobs")
-        .update({ worker_id: application.worker_id, status: "assigned" })
-        .eq("id", application.job_id);
-      toast.success("Application accepted successfully!");
-      router.push(`/customer/dashboard/applications`);
-    } catch (error: any) {
-      toast.error(`Error: ${error.message}`);
+      setStatusChanging(true);
+
+      const { data, error: rpcError } = await supabase.rpc(
+        "accept_application_safe",
+        {
+          p_application_id: application.id,
+          p_job_id: application.job_id,
+          p_worker_id: application.worker_id,
+        }
+      );
+
+      if (rpcError) {
+        console.error("RPC error:", rpcError);
+        toast.error("Failed to accept application");
+        throw rpcError;
+      }
+
+      if (data && !data.success) {
+        toast.error(data.error || "Failed to accept application");
+        throw new Error(data.error);
+      }
+
+      setApplication({
+        ...application,
+        status: "accepted",
+        job: application.job
+          ? {
+              ...application.job,
+              status: "assigned",
+              //@ts-ignore
+              worker_id: application.worker_id,
+            }
+          : undefined,
+      });
+
+      toast.success("✅ Application accepted!");
+      await fetchApplicationDetails();
+    } catch (error) {
+      console.error("Error:", error);
+      toast.error("Failed to accept application");
     } finally {
-      setProcessing(false);
+      setStatusChanging(false);
     }
   };
-
   const handleReject = async () => {
     if (!application) return;
-    setProcessing(true);
+
     try {
-      await supabase
-        .from("applications")
-        .update({ status: "rejected" })
-        .eq("id", application.id);
-      toast.success("Application rejected");
+      setStatusChanging(true);
+
+      // Appeler la fonction RPC pour le rejet
+      // ✅ NOUVEAU CODE
+      const { data, error: rpcError } = await supabase.rpc(
+        "accept_application_simple", // ← Bonne fonction
+        {
+          p_application_id: application.id,
+          p_job_id: application.job_id,
+          p_worker_id: application.worker_id,
+        }
+      );
+      if (rpcError) {
+        console.error("RPC error:", rpcError);
+        toast.error("Failed to reject application");
+        throw rpcError;
+      }
+
+      if (data && !data.success) {
+        toast.error(data.error || "Failed to reject application");
+        throw new Error(data.error);
+      }
+
+      // Mettre à jour l'état local
+      setApplication({
+        ...application,
+        status: "rejected",
+      });
+
+      toast.success("✅ Application rejected successfully");
+
+      // Rediriger vers la liste des applications
       router.push(`/customer/dashboard/applications`);
-    } catch (error: any) {
-      toast.error(`Error: ${error.message}`);
+    } catch (error) {
+      console.error("Error rejecting application:", error);
+      toast.error("Failed to reject application");
     } finally {
-      setProcessing(false);
+      setStatusChanging(false);
       setShowRejectConfirm(false);
     }
   };
@@ -215,7 +268,10 @@ export default function ApplicationDetailPage() {
 
   const handleSubmitDispute = async () => {
     if (!application) return;
-    const success = await dispute.submitDispute(application.worker_id);
+    const success = await dispute.submitDispute(
+      //@ts-ignore
+      application.worker_id
+    );
     if (success) {
       setShowDisputeModal(false);
     }
@@ -361,7 +417,7 @@ export default function ApplicationDetailPage() {
         </div>
       </header>
 
-      <main className=" px-4 sm:px-6 lg:px-8 py-8">
+      <main className="px-4 sm:px-6 lg:px-8 py-8">
         <ApplicationStatusBanner
           status={application.status}
           onContact={handleContact}
@@ -411,7 +467,7 @@ export default function ApplicationDetailPage() {
               jobStatus={application.job?.status}
               onAccept={handleAccept}
               onReject={handleReject}
-              processing={processing}
+              processing={processing || statusChanging}
               showRejectConfirm={showRejectConfirm}
               setShowRejectConfirm={setShowRejectConfirm}
               jobId={application.job_id}
@@ -489,13 +545,6 @@ function WorkerSummaryCard({
     }
     return "Recently";
   };
-
-  console.log("WorkerSummaryCard props:", {
-    applicationStatus,
-    jobStatus,
-    hasRated,
-    showRateButton: jobStatus === "completed" && !hasRated,
-  });
 
   return (
     <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden sticky top-24 transition-all duration-300 hover:shadow-xl">

@@ -1,189 +1,213 @@
-// hooks/useNotifications.ts
-"use client";
-
-import { useEffect, useState, useCallback } from "react";
+// lib/hooks/useNotifications.ts
+import { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
 
-export interface Notification {
+type Notification = {
   id: string;
   user_id: string;
-  type: "application" | "message" | "job_status" | "payment" | "review";
+  type: string;
   title: string;
   content: string;
   data: any;
   read: boolean;
   created_at: string;
-}
+};
+
+// Store global state outside the hook to make it a singleton
+let globalNotifications: Notification[] = [];
+let globalUnreadCount = 0;
+let listeners: (() => void)[] = [];
+let subscription: any = null;
 
 export function useNotifications() {
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
+  const [notifications, setNotifications] =
+    useState<Notification[]>(globalNotifications);
+  const [unreadCount, setUnreadCount] = useState(globalUnreadCount);
   const [loading, setLoading] = useState(true);
-  const { user } = useAuth();
+  const { profile } = useAuth();
+
+  const notifyListeners = useCallback(() => {
+    listeners.forEach((listener) => listener());
+  }, []);
 
   const fetchNotifications = useCallback(async () => {
-    if (!user?.id) {
-      setNotifications([]);
-      setUnreadCount(0);
-      setLoading(false);
-      return;
-    }
+    if (!profile?.id) return;
 
     try {
       const { data, error } = await supabase
         .from("notifications")
         .select("*")
-        .eq("user_id", user.id)
+        .eq("user_id", profile.id)
         .order("created_at", { ascending: false })
         .limit(50);
 
       if (error) throw error;
 
-      console.log(
-        `📥 Chargé ${data?.length} notifications pour user ${user.id}`
-      );
-      setNotifications(data || []);
-      setUnreadCount(data?.filter((n) => !n.read).length || 0);
+      globalNotifications = data || [];
+      globalUnreadCount = globalNotifications.filter((n) => !n.read).length;
+
+      setNotifications(globalNotifications);
+      setUnreadCount(globalUnreadCount);
+      notifyListeners();
     } catch (error) {
-      console.error("Erreur chargement:", error);
+      console.error("Error fetching notifications:", error);
     } finally {
       setLoading(false);
     }
-  }, [user?.id]);
+  }, [profile?.id, notifyListeners]);
 
-  const markAsRead = useCallback(async (notificationId: string) => {
-    try {
-      const { error } = await supabase
-        .from("notifications")
-        .update({ read: true })
-        .eq("id", notificationId);
+  const markAsRead = useCallback(
+    async (id: string) => {
+      try {
+        const { error } = await supabase
+          .from("notifications")
+          .update({ read: true })
+          .eq("id", id);
 
-      if (error) throw error;
+        if (error) throw error;
 
-      setNotifications((prev) =>
-        prev.map((n) => (n.id === notificationId ? { ...n, read: true } : n))
-      );
-      setUnreadCount((prev) => Math.max(0, prev - 1));
-    } catch (error) {
-      console.error("Erreur:", error);
-    }
-  }, []);
+        globalNotifications = globalNotifications.map((n) =>
+          n.id === id ? { ...n, read: true } : n
+        );
+        globalUnreadCount = globalNotifications.filter((n) => !n.read).length;
+
+        setNotifications(globalNotifications);
+        setUnreadCount(globalUnreadCount);
+        notifyListeners();
+      } catch (error) {
+        console.error("Error marking notification as read:", error);
+      }
+    },
+    [notifyListeners]
+  );
 
   const markAllAsRead = useCallback(async () => {
-    if (!user?.id) return;
+    if (!profile?.id) return;
 
     try {
       const { error } = await supabase
         .from("notifications")
         .update({ read: true })
-        .eq("user_id", user.id)
+        .eq("user_id", profile.id)
         .eq("read", false);
 
       if (error) throw error;
 
-      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+      globalNotifications = globalNotifications.map((n) => ({
+        ...n,
+        read: true,
+      }));
+      globalUnreadCount = 0;
+
+      setNotifications(globalNotifications);
       setUnreadCount(0);
+      notifyListeners();
     } catch (error) {
-      console.error("Erreur:", error);
+      console.error("Error marking all as read:", error);
     }
-  }, [user?.id]);
+  }, [profile?.id, notifyListeners]);
 
   const deleteNotification = useCallback(
-    async (notificationId: string) => {
+    async (id: string) => {
       try {
         const { error } = await supabase
           .from("notifications")
           .delete()
-          .eq("id", notificationId);
+          .eq("id", id);
 
         if (error) throw error;
 
-        const deletedNotification = notifications.find(
-          (n) => n.id === notificationId
-        );
-        setNotifications((prev) => prev.filter((n) => n.id !== notificationId));
+        globalNotifications = globalNotifications.filter((n) => n.id !== id);
+        globalUnreadCount = globalNotifications.filter((n) => !n.read).length;
 
-        if (deletedNotification && !deletedNotification.read) {
-          setUnreadCount((prev) => Math.max(0, prev - 1));
-        }
+        setNotifications(globalNotifications);
+        setUnreadCount(globalUnreadCount);
+        notifyListeners();
       } catch (error) {
-        console.error("Erreur:", error);
+        console.error("Error deleting notification:", error);
       }
     },
-    [notifications]
+    [notifyListeners]
   );
 
-  // Écoute en temps réel - SANS FILTRE (solution pour customer)
+  // Set up real-time subscription
   useEffect(() => {
-    if (!user?.id) {
-      setLoading(false);
-      return;
-    }
+    if (!profile?.id) return;
 
-    console.log(`🔔 [${user.id}] Démarrage écoute notifications (sans filtre)`);
-    fetchNotifications();
+    const setupSubscription = async () => {
+      await fetchNotifications();
 
-    // Canal SANS FILTRE - on écoute TOUTES les notifications
-    const channel = supabase
-      .channel(`notifications-all-${user.id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "notifications",
-          // PAS DE FILTRE ! On écoute toutes les insertions
-        },
-        (payload) => {
-          const newNotification = payload.new as Notification;
-          // On filtre côté client pour ne garder que celles de l'utilisateur
-          if (newNotification.user_id === user.id) {
-            console.log(`🎯 [${user.id}] Notification reçue en temps réel!`, {
-              id: newNotification.id,
-              title: newNotification.title,
-              type: newNotification.type,
-            });
-            setNotifications((prev) => [newNotification, ...prev]);
-            if (!newNotification.read) {
-              setUnreadCount((prev) => prev + 1);
-            }
-          } else {
-            console.log(`⏭️ [${user.id}] Notification ignorée (autre user)`);
+      // Only create one subscription
+      if (subscription) return;
+
+      subscription = supabase
+        .channel("notifications-channel")
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "notifications",
+            filter: `user_id=eq.${profile.id}`,
+          },
+          (payload) => {
+            const newNotification = payload.new as Notification;
+            globalNotifications = [newNotification, ...globalNotifications];
+            globalUnreadCount += 1;
+
+            setNotifications(globalNotifications);
+            setUnreadCount(globalUnreadCount);
+            notifyListeners();
           }
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "notifications",
-        },
-        (payload) => {
-          const updatedNotification = payload.new as Notification;
-          if (updatedNotification.user_id === user.id) {
-            console.log(
-              `🔄 [${user.id}] Notification mise à jour:`,
-              updatedNotification.id
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "notifications",
+            filter: `user_id=eq.${profile.id}`,
+          },
+          (payload) => {
+            const updated = payload.new as Notification;
+            globalNotifications = globalNotifications.map((n) =>
+              n.id === updated.id ? updated : n
             );
-            setNotifications((prev) =>
-              prev.map((n) =>
-                n.id === updatedNotification.id ? updatedNotification : n
-              )
-            );
+            globalUnreadCount = globalNotifications.filter(
+              (n) => !n.read
+            ).length;
+
+            setNotifications(globalNotifications);
+            setUnreadCount(globalUnreadCount);
+            notifyListeners();
           }
-        }
-      )
-      .subscribe((status) => {
-        console.log(`📡 [${user.id}] Statut canal:`, status);
-      });
+        )
+        .subscribe();
+    };
+
+    setupSubscription();
 
     return () => {
-      console.log(`🔌 [${user.id}] Fermeture canal`);
-      channel.unsubscribe();
+      if (subscription) {
+        subscription.unsubscribe();
+        subscription = null;
+      }
     };
-  }, [user?.id, fetchNotifications]);
+  }, [profile?.id, fetchNotifications, notifyListeners]);
+
+  // Listen for global state changes
+  useEffect(() => {
+    const handleStateChange = () => {
+      setNotifications(globalNotifications);
+      setUnreadCount(globalUnreadCount);
+    };
+
+    listeners.push(handleStateChange);
+    return () => {
+      listeners = listeners.filter((l) => l !== handleStateChange);
+    };
+  }, []);
 
   return {
     notifications,

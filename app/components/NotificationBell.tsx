@@ -12,17 +12,17 @@ import {
   CheckCheck,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
-import { fr } from "date-fns/locale";
+import { enUS } from "date-fns/locale";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNotifications } from "@/lib/hooks/useNotifications";
 
 export default function NotificationBell() {
-  // États
-  const [isOpen, setIsOpen] = useState(false); // Pour ouvrir/fermer le menu
-  const dropdownRef = useRef<HTMLDivElement>(null); // Pour détecter les clics en dehors
+  // States
+  const [isOpen, setIsOpen] = useState(false); // To open/close the menu
+  const dropdownRef = useRef<HTMLDivElement>(null); // To detect clicks outside
 
-  // Récupère les données des notifications
+  // Get notification data
   const {
     notifications,
     unreadCount,
@@ -33,7 +33,7 @@ export default function NotificationBell() {
   } = useNotifications();
   const { profile } = useAuth();
 
-  // Ferme le menu si on clique en dehors
+  // Close menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
@@ -48,7 +48,6 @@ export default function NotificationBell() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Choisit une icône selon le type de notification
   const getIcon = (type: string) => {
     switch (type) {
       case "application":
@@ -65,44 +64,74 @@ export default function NotificationBell() {
         return <Bell className="w-5 h-5 text-gray-500" />;
     }
   };
-
-  // Quand on clique sur une notification
   const handleClick = async (notification: any) => {
-    // Marque comme lu si pas encore lu
+    // Mark as read if not already read
     if (!notification.read) {
       await markAsRead(notification.id);
     }
 
-    // Redirige selon le type de notification
+    // Redirect based on notification type
     const basePath =
       profile?.role === "customer"
         ? "/customer/dashboard"
         : "/worker/dashboard";
 
-    if (notification.data?.job_id) {
-      window.location.href = `${basePath}/jobs/${notification.data.job_id}`;
-    } else if (notification.data?.message_id) {
-      window.location.href = `${basePath}/messages`;
+    // Handle message notifications (priority to message)
+    if (
+      notification.data?.type === "new_message" &&
+      notification.data?.job_id
+    ) {
+      // Redirect to chat with job_id (conversation)
+      window.location.href = `${basePath}/chat/${notification.data.job_id}`;
+    }
+    // Handle job-related notifications
+    else if (notification.data?.job_id) {
+      // Worker: redirect to /my-jobs (list)
+      // Customer: redirect to /my-jobs/{job_id} (specific job)
+      if (profile?.role === "worker") {
+        window.location.href = `${basePath}/my-jobs?job_id=${notification.data.job_id}`;
+      } else {
+        window.location.href = `${basePath}/my-jobs/${notification.data.job_id}`;
+      }
+    }
+    // Fallback for other notification types
+    else if (notification.data?.type) {
+      // Add other specific redirects if needed
+      switch (notification.data.type) {
+        case "new_review":
+          // Redirect to reviews page
+          window.location.href = `${basePath}/reviews`;
+          break;
+        case "payment_processed":
+          // Redirect to payments page
+          window.location.href = `${basePath}/payments`;
+          break;
+        default:
+          // Default redirect to dashboard
+          window.location.href = basePath;
+      }
     }
 
     setIsOpen(false);
   };
-
-  // Formate la date (ex: "il y a 5 minutes")
+  // Format date (ex: "5 minutes ago")
   const formatTime = (date: string) => {
-    return formatDistanceToNow(new Date(date), { addSuffix: true, locale: fr });
+    return formatDistanceToNow(new Date(date), {
+      addSuffix: true,
+      locale: enUS,
+    });
   };
 
   return (
     <div className="relative" ref={dropdownRef}>
-      {/* Bouton cloche */}
+      {/* Bell button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="relative p-2 rounded-lg hover:bg-gray-100 transition-colors"
       >
         <Bell className="w-5 h-5 text-gray-600" />
 
-        {/* Badge avec le nombre de notifications non lues */}
+        {/* Badge with unread notifications count */}
         {unreadCount > 0 && (
           <span className="absolute top-0 right-0 transform translate-x-1/2 -translate-y-1/2 bg-red-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
             {unreadCount > 99 ? "99+" : unreadCount}
@@ -110,10 +139,10 @@ export default function NotificationBell() {
         )}
       </button>
 
-      {/* Menu déroulant des notifications */}
+      {/* Notifications dropdown menu */}
       {isOpen && (
         <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-xl shadow-lg border border-gray-200 z-50">
-          {/* En-tête */}
+          {/* Header */}
           <div className="flex items-center justify-between p-4 border-b border-gray-100">
             <h3 className="font-semibold text-gray-900">Notifications</h3>
             {unreadCount > 0 && (
@@ -122,27 +151,27 @@ export default function NotificationBell() {
                 className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
               >
                 <CheckCheck className="w-3 h-3" />
-                Tout marquer comme lu
+                Mark all as read
               </button>
             )}
           </div>
 
-          {/* Liste des notifications */}
+          {/* Notifications list */}
           <div className="max-h-96 overflow-y-auto">
             {loading ? (
-              // État de chargement
+              // Loading state
               <div className="p-8 text-center">
                 <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-600 border-t-transparent mx-auto"></div>
-                <p className="mt-2 text-sm text-gray-500">Chargement...</p>
+                <p className="mt-2 text-sm text-gray-500">Loading...</p>
               </div>
             ) : notifications.length === 0 ? (
-              // Pas de notifications
+              // No notifications
               <div className="p-8 text-center">
                 <Bell className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                <p className="text-gray-500">Aucune notification</p>
+                <p className="text-gray-500">No notifications</p>
               </div>
             ) : (
-              // Liste des notifications
+              // Notifications list
               notifications.map((notification) => (
                 <div
                   key={notification.id}
@@ -152,12 +181,12 @@ export default function NotificationBell() {
                   onClick={() => handleClick(notification)}
                 >
                   <div className="flex gap-3">
-                    {/* Icône */}
+                    {/* Icon */}
                     <div className="flex-shrink-0">
                       {getIcon(notification.type)}
                     </div>
 
-                    {/* Contenu */}
+                    {/* Content */}
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-gray-900">
                         {notification.title}
@@ -169,44 +198,16 @@ export default function NotificationBell() {
                         {formatTime(notification.created_at)}
                       </p>
                     </div>
-
-                    {/* Bouton supprimer */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteNotification(notification.id);
-                      }}
-                      className="flex-shrink-0 p-1 hover:bg-gray-200 rounded"
-                    >
-                      <X className="w-4 h-4 text-gray-400" />
-                    </button>
                   </div>
 
-                  {/* Indicateur de non lu */}
+                  {/* Unread indicator */}
                   {!notification.read && (
-                    <div className="absolute left-0 top-1/2 transform -translate-y-1/2 w-1 h-8 bg-blue-500 rounded-r"></div>
+                    <div className="absolute left-0 top-1/2 transform -translate-y-1/2 w-1 h-8 bg-purple-500 rounded-r"></div>
                   )}
                 </div>
               ))
             )}
           </div>
-
-          {/* Pied de page */}
-          {notifications.length > 0 && (
-            <div className="p-3 border-t border-gray-100 bg-gray-50">
-              <Link
-                href={
-                  profile?.role === "customer"
-                    ? "/customer/dashboard/notifications"
-                    : "/worker/dashboard/notifications"
-                }
-                className="text-center text-sm text-blue-600 hover:text-blue-700 block"
-                onClick={() => setIsOpen(false)}
-              >
-                Voir toutes les notifications
-              </Link>
-            </div>
-          )}
         </div>
       )}
     </div>

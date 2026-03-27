@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Briefcase,
   MapPin,
@@ -172,7 +172,6 @@ const DisputeCreationModal = ({
     const filePath = `disputes/${job.id}/${fileName}`;
 
     try {
-      // Simuler la progression du téléchargement
       const simulateProgress = () => {
         let progress = 0;
         const interval = setInterval(() => {
@@ -199,7 +198,6 @@ const DisputeCreationModal = ({
 
       if (uploadError) throw uploadError;
 
-      // Récupérer l'URL publique
       const {
         data: { publicUrl },
       } = supabase.storage.from("dispute-evidence").getPublicUrl(filePath);
@@ -215,8 +213,7 @@ const DisputeCreationModal = ({
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
 
-    // Vérifier la taille des fichiers (max 10MB par fichier)
-    const maxSize = 10 * 1024 * 1024; // 10MB
+    const maxSize = 10 * 1024 * 1024;
     const oversizedFiles = files.filter((file) => file.size > maxSize);
     if (oversizedFiles.length > 0) {
       setError(
@@ -227,7 +224,6 @@ const DisputeCreationModal = ({
       return;
     }
 
-    // Vérifier les types de fichiers autorisés
     const allowedTypes = [
       "image/jpeg",
       "image/png",
@@ -300,7 +296,6 @@ const DisputeCreationModal = ({
         return;
       }
 
-      // Extraire uniquement les URLs pour l'enregistrement
       const evidenceUrls = evidence.map((e) => e.url);
 
       const { error: disputeError } = await supabase.from("disputes").insert({
@@ -377,7 +372,6 @@ const DisputeCreationModal = ({
         </div>
 
         <div className="p-6 space-y-6">
-          {/* Dispute Type */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-3">
               Issue Type *
@@ -414,7 +408,6 @@ const DisputeCreationModal = ({
             </div>
           </div>
 
-          {/* Description */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Description of the Issue *
@@ -428,7 +421,6 @@ const DisputeCreationModal = ({
             />
           </div>
 
-          {/* Preferred Resolution */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Preferred Resolution *
@@ -442,7 +434,6 @@ const DisputeCreationModal = ({
             />
           </div>
 
-          {/* Evidence Upload */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Evidence (Optional)
@@ -476,7 +467,6 @@ const DisputeCreationModal = ({
               </div>
             </div>
 
-            {/* Upload Progress */}
             {uploading && Object.keys(uploadProgress).length > 0 && (
               <div className="mt-3 space-y-2">
                 {Object.entries(uploadProgress).map(([fileName, progress]) => (
@@ -498,7 +488,6 @@ const DisputeCreationModal = ({
               </div>
             )}
 
-            {/* Evidence List */}
             {evidence.length > 0 && (
               <div className="mt-4 space-y-2">
                 <p className="text-sm font-medium text-gray-700">
@@ -546,7 +535,6 @@ const DisputeCreationModal = ({
             )}
           </div>
 
-          {/* Error Message */}
           {error && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm flex items-center gap-2">
               <AlertCircle className="w-4 h-4 flex-shrink-0" />
@@ -560,7 +548,6 @@ const DisputeCreationModal = ({
             </div>
           )}
 
-          {/* Actions */}
           <div className="flex gap-3 pt-4">
             <button
               onClick={onClose}
@@ -593,7 +580,6 @@ const DisputeCreationModal = ({
             </button>
           </div>
 
-          {/* Info note */}
           <div className="text-xs text-gray-500 text-center pt-2">
             <p>
               Your dispute will be reviewed by an administrator within 24-48
@@ -628,10 +614,60 @@ export default function WorkerMyJobsPage() {
   const [showDisputeModal, setShowDisputeModal] = useState(false);
 
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Fonctions pour gérer le modal avec paramètre URL
+  const openJobModal = useCallback((job: Job) => {
+    setSelectedJob(job);
+    setShowJobModal(true);
+    // Ajouter le paramètre job_id dans l'URL
+    const url = new URL(window.location.href);
+    url.searchParams.set("job_id", job.id);
+    window.history.pushState({}, "", url.toString());
+  }, []);
+
+  const closeJobModal = useCallback(() => {
+    setShowJobModal(false);
+    setSelectedJob(null);
+    // Retirer le paramètre de l'URL
+    const url = new URL(window.location.href);
+    url.searchParams.delete("job_id");
+    window.history.pushState({}, "", url.toString());
+  }, []);
 
   useEffect(() => {
     fetchMyJobs();
   }, []);
+
+  // Vérifier s'il y a un job_id dans l'URL au chargement
+  useEffect(() => {
+    const jobId = searchParams.get("job_id");
+    if (jobId && jobs.length > 0) {
+      const job = jobs.find((j) => j.id === jobId);
+      if (job) {
+        setSelectedJob(job);
+        setShowJobModal(true);
+      }
+    }
+  }, [searchParams, jobs]);
+
+  // Gestion du bouton retour du navigateur
+  useEffect(() => {
+    const handlePopState = () => {
+      const jobId = searchParams.get("job_id");
+      if (!jobId && showJobModal) {
+        closeJobModal();
+      } else if (jobId && !showJobModal) {
+        const job = jobs.find((j) => j.id === jobId);
+        if (job) {
+          openJobModal(job);
+        }
+      }
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [searchParams, showJobModal, jobs, openJobModal, closeJobModal]);
 
   const fetchMyJobs = useCallback(
     async (showRefresh = false) => {
@@ -1060,7 +1096,7 @@ export default function WorkerMyJobsPage() {
 
             <div className="flex items-center gap-2 mb-4">
               <span
-                className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium border ${statusConfig.bg} ${statusConfig.text} ${statusConfig.border}`}
+                className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium border ${statusConfig.bg} ${statusConfig.textColor} ${statusConfig.border}`}
               >
                 <StatusIcon className={`w-4 h-4 ${statusConfig.iconColor}`} />
                 {statusConfig.text}
@@ -1248,7 +1284,6 @@ export default function WorkerMyJobsPage() {
               )}
             </div>
 
-            {/* Report Issue Button */}
             {/* Report Issue Button - UNIQUEMENT POUR LES JOBS COMPLETED */}
             {job.status === "completed" && (
               <button
@@ -1257,10 +1292,11 @@ export default function WorkerMyJobsPage() {
                   setSelectedJob(job);
                   setShowDisputeModal(true);
                 }}
-                className="px-3 py-2 bg-red-50 text-red-700 text-sm font-medium rounded-lg hover:bg-red-100 transition"
+                className="mt-3 w-full px-4 py-2 bg-red-50 text-red-700 text-sm font-medium rounded-lg hover:bg-red-100 transition flex items-center justify-center gap-2"
                 title="Report Issue"
               >
                 <AlertTriangle className="w-4 h-4" />
+                Report an Issue
               </button>
             )}
           </div>
@@ -1443,10 +1479,7 @@ export default function WorkerMyJobsPage() {
                 <div
                   key={job.id}
                   className="group bg-white rounded-xl border border-gray-200 hover:shadow-xl transition-all duration-300 hover:-translate-y-1 overflow-hidden cursor-pointer"
-                  onClick={() => {
-                    setSelectedJob(job);
-                    setShowJobModal(true);
-                  }}
+                  onClick={() => openJobModal(job)}
                 >
                   {/* Status Bar */}
                   <div
@@ -1624,8 +1657,7 @@ export default function WorkerMyJobsPage() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          setSelectedJob(job);
-                          setShowJobModal(true);
+                          openJobModal(job);
                         }}
                         className="px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition"
                       >
@@ -1707,10 +1739,7 @@ export default function WorkerMyJobsPage() {
 
       {/* Job Detail Modal */}
       {showJobModal && selectedJob && (
-        <JobDetailModal
-          job={selectedJob}
-          onClose={() => setShowJobModal(false)}
-        />
+        <JobDetailModal job={selectedJob} onClose={closeJobModal} />
       )}
 
       {/* Dispute Creation Modal */}

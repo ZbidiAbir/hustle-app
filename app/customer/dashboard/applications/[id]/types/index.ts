@@ -1,7 +1,7 @@
 export type Application = {
   id: string;
   job_id: string;
-  worker_id: string;
+  worker_id?: string;
   message: string;
   status: "pending" | "accepted" | "rejected";
   created_at: string;
