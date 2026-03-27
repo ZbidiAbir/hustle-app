@@ -55,13 +55,17 @@ export default function NotificationToast() {
   const { profile } = useAuth();
 
   const timeoutRefs = useRef<Map<string, NodeJS.Timeout>>(new Map());
-  const shownToastIdsRef = useRef<Set<string>>(getStoredToastIds());
+  const shownToastIdsRef = useRef<Set<string>>(
+    //@ts-ignore
+    getStoredToastIds()
+  );
 
   /*
     Reset localStorage when user changes
   */
 
   useEffect(() => {
+    //@ts-ignore
     shownToastIdsRef.current = getStoredToastIds();
   }, [profile?.id]);
 
