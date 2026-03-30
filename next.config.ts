@@ -1,5 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Désactiver l'optimisation des polices pour éviter l'avertissement de préchargement
+  optimizeFonts: false,
+
   async headers() {
     return [
       {

@@ -68,6 +68,7 @@ export default function CreateJobPage() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [saveAsDraft, setSaveAsDraft] = useState(false);
   const [activeSection, setActiveSection] = useState(1);
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
   const categories = [
@@ -104,7 +105,7 @@ export default function CreateJobPage() {
   // Progress calculation
   const calculateProgress = () => {
     let completed = 0;
-    let total = 0;
+    let total = 9;
 
     if (formData.title) completed++;
     if (formData.category) completed++;
@@ -116,7 +117,6 @@ export default function CreateJobPage() {
     if (formData.payType) completed++;
     if (formData.coiFile) completed++;
 
-    total = 9;
     return Math.round((completed / total) * 100);
   };
 
@@ -196,7 +196,7 @@ export default function CreateJobPage() {
     setFormData((prev) => ({ ...prev, coiFile: file }));
   };
 
-  // File upload
+  // File upload with better error handling
   const uploadFiles = async (jobId: string) => {
     const uploadedUrls: {
       coiUrl?: string;
@@ -205,78 +205,195 @@ export default function CreateJobPage() {
       photoUrls: [],
     };
 
+    // Upload COI if exists
     if (formData.coiFile) {
-      const coiExt = formData.coiFile.name.split(".").pop();
-      const coiFileName = `${jobId}/coi.${coiExt}`;
+      try {
+        const coiExt = formData.coiFile.name.split(".").pop();
+        const coiFileName = `${jobId}/coi.${coiExt}`;
 
-      const { error: coiError } = await supabase.storage
-        .from("job-documents")
-        .upload(coiFileName, formData.coiFile);
+        const { error: coiError } = await supabase.storage
+          .from("job-documents")
+          .upload(coiFileName, formData.coiFile, {
+            cacheControl: "3600",
+            upsert: false,
+          });
 
-      if (!coiError) {
+        if (coiError) {
+          console.error("COI upload error:", coiError);
+          throw new Error(`Failed to upload COI: ${coiError.message}`);
+        }
+
         const {
           data: { publicUrl },
         } = supabase.storage.from("job-documents").getPublicUrl(coiFileName);
         uploadedUrls.coiUrl = publicUrl;
+      } catch (error) {
+        console.error("COI upload failed:", error);
+        throw error;
       }
     }
 
+    // Upload photos
     for (let i = 0; i < formData.photos.length; i++) {
-      const file = formData.photos[i];
-      const fileExt = file.name.split(".").pop();
-      const fileName = `${jobId}/photos/${Date.now()}-${i}.${fileExt}`;
+      try {
+        const file = formData.photos[i];
+        const fileExt = file.name.split(".").pop();
+        const fileName = `${jobId}/photos/${Date.now()}-${i}.${fileExt}`;
 
-      const { error: uploadError } = await supabase.storage
-        .from("job-images")
-        .upload(fileName, file);
+        const { error: uploadError } = await supabase.storage
+          .from("job-images")
+          .upload(fileName, file, {
+            cacheControl: "3600",
+            upsert: false,
+          });
 
-      if (!uploadError) {
+        if (uploadError) {
+          console.error("Photo upload error:", uploadError);
+          throw new Error(
+            `Failed to upload photo ${i + 1}: ${uploadError.message}`
+          );
+        }
+
         const {
           data: { publicUrl },
         } = supabase.storage.from("job-images").getPublicUrl(fileName);
         uploadedUrls.photoUrls.push(publicUrl);
+
         setUploadProgress(
           Math.round(((i + 1) / formData.photos.length) * 50) + 50
         );
+      } catch (error) {
+        console.error("Photo upload failed:", error);
+        throw error;
       }
     }
 
     return uploadedUrls;
   };
 
+  // Form validation
+  const validateForm = (): boolean => {
+    setError(null);
+
+    if (!formData.title.trim()) {
+      setError("Please enter a job title");
+      return false;
+    }
+
+    if (!formData.category) {
+      setError("Please select a category");
+      return false;
+    }
+
+    if (!formData.location.trim()) {
+      setError("Please enter a location");
+      return false;
+    }
+
+    if (!formData.description.trim()) {
+      setError("Please enter a job description");
+      return false;
+    }
+
+    if (!formData.projectSize) {
+      setError("Please select project size");
+      return false;
+    }
+
+    if (!formData.urgency) {
+      setError("Please select urgency");
+      return false;
+    }
+
+    if (!formData.level) {
+      setError("Please select required level");
+      return false;
+    }
+
+    if (!formData.payType) {
+      setError("Please select payment type");
+      return false;
+    }
+
+    if (!saveAsDraft && !formData.coiFile) {
+      setError("Please upload a Certificate of Insurance (COI)");
+      return false;
+    }
+
+    // Validate payment amounts
+    if (formData.payType === "Fixed" && formData.fixedRate <= 0) {
+      setError("Please enter a valid fixed price");
+      return false;
+    }
+
+    if (formData.payType === "Range") {
+      if (formData.minRate <= 0 || formData.maxRate <= 0) {
+        setError("Please enter valid minimum and maximum rates");
+        return false;
+      }
+      if (formData.minRate >= formData.maxRate) {
+        setError("Minimum rate must be less than maximum rate");
+        return false;
+      }
+    }
+
+    if (formData.payType === "Hourly" && formData.hourlyRate <= 0) {
+      setError("Please enter a valid hourly rate");
+      return false;
+    }
+
+    return true;
+  };
+
   // Form submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Reset states
+    setError(null);
+    setUploadProgress(0);
+
+    // Validate form
+    if (!validateForm()) {
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
 
     try {
+      // Get current user
       const {
         data: { user },
+        error: userError,
       } = await supabase.auth.getUser();
-      if (!user) {
-        router.push("/login");
-        return;
-      }
 
+      if (userError)
+        throw new Error("Authentication error: " + userError.message);
+      if (!user) throw new Error("Please login to post a job");
+
+      // Prepare job data
       const jobData: any = {
         customer_id: user.id,
-        title: formData.title,
+        title: formData.title.trim(),
         category: formData.category,
-        location: formData.location,
-        building_access: formData.buildingAccess,
-        description: formData.description,
+        location: formData.location.trim(),
+        building_access: formData.buildingAccess.trim() || null,
+        description: formData.description.trim(),
         project_size: formData.projectSize,
         urgency: formData.urgency,
-        date: formData.date?.toISOString(),
-        time_slot: formData.timeSlot,
+        date: formData.date?.toISOString() || null,
+        time_slot: formData.timeSlot || null,
         level_required: formData.level,
-        skills: formData.skills,
+        skills: formData.skills.length > 0 ? formData.skills : null,
         materials_provided: formData.materialsProvided,
         pay_type: formData.payType,
         status: saveAsDraft ? "draft" : "open",
         created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       };
 
+      // Add payment details based on type
       if (formData.payType === "Fixed") {
         jobData.fixed_rate = formData.fixedRate;
       } else if (formData.payType === "Range") {
@@ -286,44 +403,93 @@ export default function CreateJobPage() {
         jobData.hourly_rate = formData.hourlyRate;
       }
 
+      console.log("Creating job with data:", jobData);
+
+      // Insert job
       const { data: job, error: jobError } = await supabase
         .from("jobs")
         .insert([jobData])
         .select()
         .single();
 
-      if (jobError) throw jobError;
-
-      if (formData.coiFile || formData.photos.length > 0) {
-        const uploadedUrls = await uploadFiles(job.id);
-
-        await supabase
-          .from("jobs")
-          .update({
-            coi_url: uploadedUrls.coiUrl,
-            images: uploadedUrls.photoUrls,
-          })
-          .eq("id", job.id);
+      if (jobError) {
+        console.error("Job creation error:", jobError);
+        throw new Error(`Failed to create job: ${jobError.message}`);
       }
 
-      alert(
-        saveAsDraft
-          ? "✅ Draft saved successfully!"
-          : "✅ Job posted successfully!"
-      );
+      console.log("Job created successfully:", job);
+
+      // Upload files if any
+      if (formData.coiFile || formData.photos.length > 0) {
+        try {
+          setUploadProgress(10);
+          const uploadedUrls = await uploadFiles(job.id);
+          setUploadProgress(100);
+
+          // Update job with file URLs
+          const updateData: any = {};
+          if (uploadedUrls.coiUrl) updateData.coi_url = uploadedUrls.coiUrl;
+          if (uploadedUrls.photoUrls.length > 0)
+            updateData.images = uploadedUrls.photoUrls;
+
+          if (Object.keys(updateData).length > 0) {
+            const { error: updateError } = await supabase
+              .from("jobs")
+              .update(updateData)
+              .eq("id", job.id);
+
+            if (updateError) {
+              console.error(
+                "Failed to update job with file URLs:",
+                updateError
+              );
+              // Don't throw, job was created successfully
+            }
+          }
+        } catch (uploadError: any) {
+          console.error("File upload error:", uploadError);
+          // Job was created but files failed
+          alert(
+            `Warning: Job created but files failed to upload: ${uploadError.message}`
+          );
+        }
+      }
+
+      // Success!
+      const successMessage = saveAsDraft
+        ? "✅ Draft saved successfully!"
+        : "✅ Job posted successfully!";
+      alert(successMessage);
+
+      // Redirect
       router.push("/customer/dashboard/my-jobs");
     } catch (error: any) {
-      console.error("❌ Error:", error);
-      alert(`Error: ${error.message}`);
+      console.error("❌ Error in form submission:", error);
+      setError(
+        error.message || "An unexpected error occurred. Please try again."
+      );
+      alert(
+        `Error: ${error.message || "Please check your inputs and try again."}`
+      );
     } finally {
       setLoading(false);
+      setUploadProgress(0);
     }
+  };
+
+  // Handle draft save
+  const handleSaveDraft = async () => {
+    setSaveAsDraft(true);
+    // Create a synthetic event
+    const syntheticEvent = { preventDefault: () => {} } as React.FormEvent;
+    await handleSubmit(syntheticEvent);
+    setSaveAsDraft(false);
   };
 
   const progress = calculateProgress();
 
   return (
-    <div className="min-h-screen bg-gradient-to-br  p-4 ">
+    <div className="min-h-screen bg-gradient-to-br p-4">
       <div className="">
         {/* Header with Progress */}
         <div className="mb-8">
@@ -343,6 +509,29 @@ export default function CreateJobPage() {
             />
           </div>
           <p className="text-sm text-gray-600 mt-2">Completion: {progress}%</p>
+
+          {/* Error Message */}
+          {error && (
+            <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700">
+              <p className="font-medium">Error:</p>
+              <p className="text-sm">{error}</p>
+            </div>
+          )}
+
+          {/* Upload Progress */}
+          {loading && uploadProgress > 0 && uploadProgress < 100 && (
+            <div className="mt-4">
+              <p className="text-sm text-gray-600 mb-2">
+                Uploading files: {uploadProgress}%
+              </p>
+              <div className="bg-gray-200 rounded-full h-2 overflow-hidden">
+                <div
+                  className="h-full bg-purple-500 transition-all duration-300"
+                  style={{ width: `${uploadProgress}%` }}
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Main Form */}
@@ -536,6 +725,7 @@ export default function CreateJobPage() {
                 </div>
 
                 {/* Date */}
+                {/* Date */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Preferred Date
@@ -549,6 +739,7 @@ export default function CreateJobPage() {
                         date: e.target.value ? new Date(e.target.value) : null,
                       })
                     }
+                    min={new Date().toISOString().split("T")[0]} // 👈 Ajoutez cette ligne
                     className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                   />
                 </div>
@@ -1019,18 +1210,18 @@ export default function CreateJobPage() {
             <div className="flex flex-col sm:flex-row gap-4 pt-6">
               <button
                 type="button"
-                onClick={() => {
-                  setSaveAsDraft(true);
-                  handleSubmit as any;
-                }}
-                className="flex-1 px-6 py-4 border-2 border-gray-300 text-gray-700 rounded-xl font-semibold hover:bg-gray-50 transition-all hover:border-gray-400"
+                onClick={handleSaveDraft}
+                disabled={loading}
+                className="flex-1 px-6 py-4 border-2 border-gray-300 text-gray-700 rounded-xl font-semibold hover:bg-gray-50 transition-all hover:border-gray-400 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Save as Draft
+                {loading && uploadProgress === 0
+                  ? "Saving..."
+                  : "Save as Draft"}
               </button>
               <button
                 type="submit"
                 disabled={loading}
-                className="flex-1 px-6 py-4 bg-gradient-to-r from-purple-600 to-purple-600 text-white rounded-xl font-semibold hover:from-purple-700 hover:to-purple-700 disabled:opacity-50 transition-all transform hover:scale-[1.02] shadow-lg hover:shadow-xl"
+                className="flex-1 px-6 py-4 bg-gradient-to-r from-purple-600 to-purple-600 text-white rounded-xl font-semibold hover:from-purple-700 hover:to-purple-700 disabled:opacity-50 transition-all transform hover:scale-[1.02] shadow-lg hover:shadow-xl disabled:cursor-not-allowed"
               >
                 {loading ? (
                   <span className="flex items-center justify-center gap-2">
@@ -1054,7 +1245,9 @@ export default function CreateJobPage() {
                         d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                       ></path>
                     </svg>
-                    Posting...
+                    {uploadProgress > 0
+                      ? `Uploading... ${uploadProgress}%`
+                      : "Posting..."}
                   </span>
                 ) : (
                   "Post Job"
@@ -1065,7 +1258,6 @@ export default function CreateJobPage() {
         </div>
       </div>
 
-      {/* Add animation styles */}
       <style jsx>{`
         @keyframes fadeIn {
           from {

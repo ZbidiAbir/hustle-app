@@ -209,16 +209,14 @@ export default function ApplicationDetailPage() {
     try {
       setStatusChanging(true);
 
-      // Appeler la fonction RPC pour le rejet
-      // ✅ NOUVEAU CODE
+      // Appeler UNIQUEMENT la fonction RPC
       const { data, error: rpcError } = await supabase.rpc(
-        "accept_application_simple", // ← Bonne fonction
+        "reject_application_with_notification",
         {
           p_application_id: application.id,
-          p_job_id: application.job_id,
-          p_worker_id: application.worker_id,
         }
       );
+
       if (rpcError) {
         console.error("RPC error:", rpcError);
         toast.error("Failed to reject application");
@@ -236,7 +234,7 @@ export default function ApplicationDetailPage() {
         status: "rejected",
       });
 
-      toast.success("✅ Application rejected successfully");
+      toast.success("Application rejected successfully");
 
       // Rediriger vers la liste des applications
       router.push(`/customer/dashboard/applications`);
@@ -248,7 +246,6 @@ export default function ApplicationDetailPage() {
       setShowRejectConfirm(false);
     }
   };
-
   const handleContact = useCallback(() => {
     if (!application) return;
     router.push(

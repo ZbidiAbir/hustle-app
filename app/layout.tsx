@@ -19,9 +19,10 @@ export default function RootLayout({
   return (
     <html lang="fr">
       <AuthProvider>
-        <ToastProvider>
-          <body className={inter.className}>{children}</body>
-        </ToastProvider>
+        <body className={inter.className}>
+          {" "}
+          <ToastProvider>{children}</ToastProvider>
+        </body>
       </AuthProvider>
     </html>
   );
