@@ -1096,11 +1096,11 @@ export default function CreateJobPage() {
                   <div className="grid grid-cols-2 gap-4 animate-fadeIn">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Minimum (€) <span className="text-red-500">*</span>
+                        Minimum ($) <span className="text-red-500">*</span>
                       </label>
                       <div className="relative">
                         <span className="absolute left-4 top-3 text-gray-500">
-                          €
+                          $
                         </span>
                         <input
                           type="number"
@@ -1121,11 +1121,11 @@ export default function CreateJobPage() {
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Maximum (€) <span className="text-red-500">*</span>
+                        Maximum ($) <span className="text-red-500">*</span>
                       </label>
                       <div className="relative">
                         <span className="absolute left-4 top-3 text-gray-500">
-                          €
+                          $
                         </span>
                         <input
                           type="number"
@@ -1150,11 +1150,11 @@ export default function CreateJobPage() {
                 {formData.payType === "Hourly" && (
                   <div className="animate-fadeIn">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Hourly Rate (€/h) <span className="text-red-500">*</span>
+                      Hourly Rate ($/h) <span className="text-red-500">*</span>
                     </label>
                     <div className="relative">
                       <span className="absolute left-4 top-3 text-gray-500">
-                        €
+                        $
                       </span>
                       <input
                         type="number"
