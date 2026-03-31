@@ -1067,11 +1067,11 @@ export default function CreateJobPage() {
                 {formData.payType === "Fixed" && (
                   <div className="animate-fadeIn">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Fixed Price (€) <span className="text-red-500">*</span>
+                      Fixed Price ($) <span className="text-red-500">*</span>
                     </label>
                     <div className="relative">
                       <span className="absolute left-4 top-3 text-gray-500">
-                        €
+                        $
                       </span>
                       <input
                         type="number"
