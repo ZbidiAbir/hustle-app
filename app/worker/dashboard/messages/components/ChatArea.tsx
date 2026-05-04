@@ -2,9 +2,9 @@ import { Conversation, Customer } from "@/types/chat";
 import { ChatHeader } from "./ChatHeader";
 import { JobInfoBar } from "./JobInfoBar";
 import { MessageList } from "./MessageList";
-import { MessageInput } from "./MessageInput";
 import { CompanyDetails } from "./CompanyDetails";
 import { EmptyChat } from "./EmptyChat";
+import MessageInput from "@/app/components/MessageInput";
 
 interface ChatAreaProps {
   conversation: Conversation | null;
@@ -64,7 +64,7 @@ export function ChatArea({
         messagesEndRef={messagesEndRef}
       />
 
-      <MessageInput onSendMessage={onSendMessage} isSending={sending} />
+      <MessageInput />
     </div>
   );
 }

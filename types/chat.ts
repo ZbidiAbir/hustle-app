@@ -9,6 +9,10 @@ export type Message = {
   created_at: string;
   sender_name?: string;
   sender_avatar?: string;
+  file_url?: string;
+  file_name?: string;
+  file_size?: string;
+  type: "audio" | "file" | "text";
 };
 export type Job = {
   id: string;

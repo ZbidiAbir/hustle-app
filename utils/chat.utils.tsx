@@ -1,21 +1,26 @@
 import { Customer, Worker } from "@/types/chat";
 
-export const formatMessageTime = (dateString: string) => {
-  const date = new Date(dateString);
+export const formatMessageTime = (
+  dateString: Date | string | number | undefined,
+) => {
+  if (!dateString) return "undefined";
+  const normalizedDate =
+    dateString instanceof Date ? dateString : new Date(dateString);
+
   const now = new Date();
   const diffDays = Math.floor(
-    (now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24)
+    (now.getTime() - normalizedDate.getTime()) / (1000 * 60 * 60 * 24),
   );
 
   if (diffDays === 0) {
-    return date.toLocaleTimeString("en-US", {
+    return normalizedDate.toLocaleTimeString("en-US", {
       hour: "2-digit",
       minute: "2-digit",
     });
   } else if (diffDays === 1) {
     return "Yesterday";
   } else {
-    return date.toLocaleDateString("en-US", {
+    return normalizedDate.toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
     });
@@ -27,7 +32,7 @@ export const formatConversationTime = (dateString?: string) => {
   const date = new Date(dateString);
   const now = new Date();
   const diffDays = Math.floor(
-    (now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24)
+    (now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24),
   );
 
   if (diffDays === 0) {
@@ -162,3 +167,27 @@ export const getInitials = (name: string | null | undefined) => {
     .toUpperCase()
     .slice(0, 2);
 };
+
+export async function extractWaveform(
+  blob: Blob,
+  barCount = 40,
+): Promise<number[]> {
+  const arrayBuffer = await blob.arrayBuffer();
+  const audioCtx = new OfflineAudioContext(1, 1, 44100);
+  const decoded = await audioCtx.decodeAudioData(arrayBuffer);
+
+  const raw = decoded.getChannelData(0);
+  const blockSize = Math.floor(raw.length / barCount);
+
+  const bars: number[] = [];
+  for (let i = 0; i < barCount; i++) {
+    const block = raw.slice(i * blockSize, (i + 1) * blockSize);
+    const rms = Math.sqrt(
+      block.reduce((sum, v) => sum + v * v, 0) / block.length,
+    );
+    bars.push(rms);
+  }
+
+  const max = Math.max(...bars);
+  return bars.map((v) => v / max);
+}

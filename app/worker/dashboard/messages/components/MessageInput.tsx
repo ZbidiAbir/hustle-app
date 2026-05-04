@@ -55,6 +55,7 @@ export function MessageInput({
 
   return (
     <div className="bg-white border-t border-gray-200 p-4">
+      <h1>This is the message input</h1>
       <form onSubmit={handleSubmit} className="flex items-center gap-2">
         <button
           type="button"

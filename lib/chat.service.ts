@@ -83,13 +83,25 @@ export const chatService = {
     return data || [];
   },
 
-  async sendMessage(jobId: string, senderId: string, content: string) {
+  async sendMessage(
+    jobId: string,
+    senderId: string,
+    content: string | null,
+    file_url: string | null,
+    file_name: string | null,
+    file_size: number | null,
+    type: "text" | "audio" | "attachement" = "text",
+  ) {
     const { error } = await supabase.from("messages").insert([
       {
         job_id: jobId,
         sender_id: senderId,
-        content: content.trim(),
+        content: content?.trim() || null,
         read: false,
+        file_url: file_url,
+        file_name: file_name,
+        file_size: file_size,
+        type: type,
       },
     ]);
 
@@ -122,7 +134,7 @@ export const chatService = {
         },
         (payload) => {
           callback(payload.new as Message);
-        }
+        },
       )
       .subscribe();
   },

@@ -1,33 +1,46 @@
 import { useState, useRef, useEffect } from "react";
 import { Send, Loader2, Mic, Plus, Trash } from "lucide-react";
-import { useAudioRecorder } from "../../../messages/hooks/useAudioRecorder";
-import { AudioRecorderBar } from "./AudioRecorderBar";
+import { useAudioRecorder } from "../worker/dashboard/messages/hooks/useAudioRecorder";
+import { uploadAudioBlob } from "../worker/dashboard/messages/hooks/useUploadAudio";
+import { AudioRecorderBar } from "../worker/dashboard/chat/[jobId]/components/AudioRecorderBar";
 import clsx from "clsx";
-import { uploadAudioBlob } from "../../../messages/hooks/useUploadAudio";
-import { extractWaveform } from "@/utils/chat.utils";
+import { UploadButton } from "./UploadButton";
+import { UploadAttachment } from "../worker/dashboard/messages/hooks/useUploadAttachment";
+
 interface MessageInputProps {
-  onSendMessage: (content: string) => Promise<void>;
-  handleSendAudio: (
-    audioBlob: Blob | null,
-    duration: number,
-    cancel: () => void,
-    event?: React.SubmitEvent,
-  ) => void;
+  onSendMessage: (
+    content: string | null,
+    type: "text" | "audio" | "attachement",
+    file_url?: string,
+    file_name?: string,
+    file_size?: number,
+  ) => Promise<void>;
+  //   handleSendAudio: (
+  //     audioBlob: Blob | null,
+  //     duration: number,
+  //     cancel: () => void,
+  //     event?: React.SubmitEvent,
+  //   ) => void;
   isSending: boolean;
+  jobId: string;
+  senderId: string;
   onTyping?: (isTyping: boolean) => void;
-  selectedConversationId: string;
+  //   selectedConversationId: string;
 }
 
-export function MessageInput({
-  onSendMessage,
-  // handleSendAudio,
+function MessageInput({
   isSending,
-  onTyping,
-  selectedConversationId,
+  jobId,
+  senderId,
+  //   onTyping,
+  onSendMessage,
+  //   handleSendAudio,
+  //   selectedConversationId,
 }: MessageInputProps) {
   const [message, setMessage] = useState("");
   const [isComposing, setIsComposing] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null); // ✅ Correction: initialisé à null
 
   const { duration, start, state, cancel, analyser, resume, pause, stop } =
@@ -39,49 +52,96 @@ export function MessageInput({
     inputRef.current?.focus();
   }, []);
 
-  const handleTyping = () => {
-    if (onTyping) {
-      onTyping(true);
+  //   const handleTyping = () => {
+  //     if (onTyping) {
+  //       onTyping(true);
 
-      // ✅ Correction: vérification que typingTimeoutRef.current n'est pas null
-      if (typingTimeoutRef.current) {
-        clearTimeout(typingTimeoutRef.current);
-      }
+  //       // ✅ Correction: vérification que typingTimeoutRef.current n'est pas null
+  //       if (typingTimeoutRef.current) {
+  //         clearTimeout(typingTimeoutRef.current);
+  //       }
 
-      typingTimeoutRef.current = setTimeout(() => {
-        onTyping(false);
-        typingTimeoutRef.current = null; // ✅ Réinitialisation après exécution
-      }, 1000);
-    }
-  };
+  //       typingTimeoutRef.current = setTimeout(() => {
+  //         // onTyping(false);
+  //         typingTimeoutRef.current = null; // ✅ Réinitialisation après exécution
+  //       }, 1000);
+  //     }
+  //   };
 
+  //   const handleSubmit = async (
+  //     e: React.SubmitEvent | React.KeyboardEvent<HTMLInputElement>,
+  //   ) => {
+  //     e.preventDefault();
+
+  //     console.log("this is the function");
+  //     if (!message.trim() || isSending) return;
+  //     if (isRecording) {
+  //       console.log("i am here to send the audio");
+  //       const blob = await stop();
+  //       console.log("the recording clicked");
+  //       // handleSendAudio(blob, duration, cancel);
+  //       const returnedUrl = await uploadAudioBlob(blob, selectedConversationId);
+  //       console.log(returnedUrl);
+  //     } else {
+  //       console.log("what i created i come insteady");
+  //       //   await onSendMessage(message);
+  //       setMessage("");
+  //       if (onTyping) onTyping(false);
+
+  //       // ✅ Nettoyer le timeout
+  //       if (typingTimeoutRef.current) {
+  //         clearTimeout(typingTimeoutRef.current);
+  //         typingTimeoutRef.current = null;
+  //       }
+
+  //       inputRef.current?.focus();
+  //     }
+  //   };
+
+  async function handleSelectFiles(files: FileList) {
+    if (!files || files.length === 0) return;
+
+    const file = files[0];
+
+    const { url, fileName, fileSize } = await UploadAttachment(
+      file,
+      jobId,
+      senderId,
+    );
+
+    await onSendMessage(null, "attachement", url, fileName, fileSize);
+  }
   const handleSubmit = async (
     e: React.SubmitEvent | React.KeyboardEvent<HTMLInputElement>,
   ) => {
     e.preventDefault();
-    if (!message.trim() || isSending) return;
-    if (isRecording) {
-      const blob = await stop();
-      console.log("the recording clicked");
-      // handleSendAudio(blob, duration, cancel);
-      const waveForm = await extractWaveform(blob);
-      const returnedUrl = await uploadAudioBlob(blob, selectedConversationId);
-      console.log(returnedUrl);
-    } else {
-      await onSendMessage(message);
-      setMessage("");
-      if (onTyping) onTyping(false);
 
-      // ✅ Nettoyer le timeout
-      if (typingTimeoutRef.current) {
-        clearTimeout(typingTimeoutRef.current);
-        typingTimeoutRef.current = null;
-      }
+    console.log("this is the function");
+    // if (!message.trim() || isSending) return;
+    const blob = await stop();
+    console.log("the recording clicked");
+    const { url, fileName, fileSize } = await uploadAudioBlob(
+      blob,
+      jobId,
+      senderId,
+    );
+    console.log(url, fileName, fileSize);
 
-      inputRef.current?.focus();
+    await onSendMessage(message, "audio", url, fileName, fileSize);
+    setMessage("");
+    // if (onTyping) onTyping(false);
+
+    // ✅ Nettoyer le timeout
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
     }
+
+    inputRef.current?.focus();
   };
+
   console.log(isRecording);
+
   return (
     <div className="bg-white border-t border-gray-200 p-4 w-full">
       <div className="">
@@ -89,6 +149,7 @@ export function MessageInput({
           onSubmit={handleSubmit}
           className="flex items-center gap-2 w-full"
         >
+          <UploadButton onSelect={handleSelectFiles} />
           <button
             onClick={isRecording ? cancel : () => console.log("hello")}
             className={clsx(
@@ -122,7 +183,7 @@ export function MessageInput({
                 value={message}
                 onChange={(e) => {
                   setMessage(e.target.value);
-                  handleTyping();
+                  //   handleTyping();
                 }}
                 onCompositionStart={() => setIsComposing(true)}
                 onCompositionEnd={() => setIsComposing(false)}
@@ -160,3 +221,5 @@ export function MessageInput({
     </div>
   );
 }
+
+export default MessageInput;

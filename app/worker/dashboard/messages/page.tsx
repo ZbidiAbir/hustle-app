@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-
 import { ChatLayout } from "./components/ChatLayout";
 import { ConversationList } from "./components/ConversationList";
 import { ChatArea } from "./components/ChatArea";
@@ -56,7 +55,7 @@ export default function WorkerChatPage() {
   } = useMessages(
     selectedConversation?.jobId || "",
     currentUser?.id || "",
-    selectedConversation?.customer?.full_name || "Customer"
+    selectedConversation?.customer?.full_name || "Customer",
   );
 
   // If jobId is provided in URL, select that conversation

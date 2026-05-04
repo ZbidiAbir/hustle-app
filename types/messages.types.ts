@@ -2,11 +2,17 @@ import { Profile } from "./profile";
 
 export type UserRole = "worker" | "customer";
 
+export type VoiceMessageType = {
+  audioBlob?: Blob;
+  waveformData?: number[];
+  duration?: number;
+};
+
 export type Message = {
   id: string;
   job_id: string;
   sender_id: string;
-  content: string;
+  content: string | VoiceMessageType | File;
   read: boolean;
   created_at: string;
   sender_name?: string | null; // Ajouter null ici
@@ -17,6 +23,9 @@ export type SendMessageData = {
   sender_id: string;
   content: string;
   read: boolean;
+  file_url?: string | null;
+  type: "text" | "attachement" | "voice";
+  file_size?: number | null;
 };
 export type Job = {
   id: string;

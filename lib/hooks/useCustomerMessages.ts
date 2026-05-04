@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-
 import { useRouter } from "next/navigation";
 import { Conversation, Message } from "@/types/messages.types";
 import { messageService } from "../messages.service";
@@ -81,7 +80,7 @@ export const useMessages = () => {
       // Charger les messages
       const messagesData = await messageService.fetchMessages(
         conversation.id,
-        currentUser.id
+        currentUser.id,
       );
 
       // Ajouter les noms des expéditeurs
@@ -99,7 +98,7 @@ export const useMessages = () => {
 
       setMessages(
         //@ts-ignore
-        messagesWithSenders
+        messagesWithSenders,
       );
 
       // Marquer comme lu
@@ -108,8 +107,8 @@ export const useMessages = () => {
       // Mettre à jour le compteur dans la liste
       setConversations((prev) =>
         prev.map((c) =>
-          c.id === conversation.id ? { ...c, unreadCount: 0 } : c
-        )
+          c.id === conversation.id ? { ...c, unreadCount: 0 } : c,
+        ),
       );
 
       // S'abonner aux nouveaux messages
@@ -133,7 +132,7 @@ export const useMessages = () => {
         if (newMsg.sender_id !== currentUser?.id) {
           await messageService.markMessagesAsRead(
             conversation.id,
-            currentUser.id
+            currentUser.id,
           );
         }
 
@@ -155,7 +154,7 @@ export const useMessages = () => {
 
         // Rafraîchir la liste des conversations
         refreshConversations();
-      }
+      },
     );
   };
 

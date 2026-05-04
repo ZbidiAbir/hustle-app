@@ -10,23 +10,24 @@ import { ConversationItem } from "./components/ConversationItem";
 import { ChatHeader } from "./components/ChatHeader";
 import { JobInfoBar } from "./components/JobInfoBar";
 import { MessageBubble } from "./components/MessageBubble";
-import { MessageInput } from "./components/MessageInput";
+import { messageService } from "@/lib/messages.service";
+import MessageInput from "@/app/components/MessageInput";
 
 export default function MessagesPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [showMobileList, setShowMobileList] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
+  const [sending, setSending] = useState(false);
   const {
     conversations,
     selectedConversation,
     messages,
     loading,
-    sending,
+    // sending,
     currentUser,
     error,
     selectConversation,
-    sendMessage,
+    // sendMessage,
   } = useMessages();
 
   // Scroll to bottom when messages change
@@ -39,13 +40,40 @@ export default function MessagesPage() {
     return <EmptyState title="Une erreur est survenue" description={error} />;
   }
 
+  const onSendMessage = async (
+    content: string,
+    fileUrl: string | null,
+    type: "text" | "attachement" | "voice" = "text",
+    fileSize: number | null,
+  ) => {
+    if (!content.trim() || !selectedConversation || !currentUser) return;
+
+    setSending(true);
+    try {
+      await messageService.sendMessage({
+        job_id: selectedConversation.id,
+        sender_id: currentUser.id,
+        content: content.trim(),
+        file_url: fileUrl,
+        type: type,
+        file_size: fileSize,
+        read: false,
+      });
+    } catch (err) {
+      // setError("Erreur lors de l'envoi du message");
+      console.error(err);
+    } finally {
+      setSending(false);
+    }
+  };
+
   const filteredConversations = conversations.filter(
     (conv) =>
       conv.jobTitle.toLowerCase().includes(searchTerm.toLowerCase()) ||
       //@ts-ignore
       conv?.otherUser?.full_name
         .toLowerCase()
-        .includes(searchTerm.toLowerCase())
+        .includes(searchTerm.toLowerCase()),
   );
 
   const handleSelectConversation = (conversation: any) => {
@@ -53,9 +81,9 @@ export default function MessagesPage() {
     setShowMobileList(false);
   };
 
-  const handleSendMessage = async (content: string) => {
-    await sendMessage(content);
-  };
+  // const handleSendMessage = async (content: string) => {
+  //   await sendMessage(content);
+  // };
 
   return (
     <div className="h-screen flex bg-white">
@@ -139,10 +167,9 @@ export default function MessagesPage() {
               <div ref={messagesEndRef} />
             </div>
 
-            <MessageInput
-              onSendMessage={handleSendMessage}
-              disabled={sending}
-            />
+            <MessageInput />
+
+            {/* <MessageInput onSendMessage={onSendMessage} disabled={sending} /> */}
           </>
         ) : (
           <EmptyState

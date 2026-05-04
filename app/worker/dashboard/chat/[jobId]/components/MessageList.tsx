@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { MessageBubble } from "./MessageBubble";
 import { Customer, Message, User } from "@/types/chat";
 import { EmptyChat } from "./EmptyChat";
+import VoiceMessage from "../../../messages/components/VoiceMessage";
 
 interface MessageListProps {
   messages: Message[];
@@ -36,7 +37,9 @@ export function MessageList({
             (index === 0 ||
               messages[index - 1]?.sender_id !== message.sender_id);
 
-          return (
+          return message.type === "audio" ? (
+            <VoiceMessage key={message.id} isMe={isMine} message={message} />
+          ) : (
             <MessageBubble
               key={message.id}
               message={message}

@@ -2,8 +2,8 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { Customer, Job, Message } from "@/types/chat";
-import { User as SupabaseUser } from "@supabase/supabase-js"; // Importer le type Supabase
 import { chatService } from "../chat.service";
+// import { User as SupabaseUser } from "@supabase/supabase-js"; // Importer le type Supabase
 
 // Définir un type pour l'utilisateur de l'application
 type AppUser = {
@@ -94,7 +94,7 @@ export function useChat(jobId: string) {
         setSending(false);
       }
     },
-    [jobId, currentUser, job]
+    [jobId, currentUser, job],
   );
 
   const applyForJob = useCallback(async () => {

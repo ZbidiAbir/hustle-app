@@ -2,7 +2,12 @@ import { useState } from "react";
 import { Paperclip, Image as ImageIcon, Smile, Send } from "lucide-react";
 
 interface MessageInputProps {
-  onSendMessage: (content: string) => Promise<void>;
+  onSendMessage: (
+    content: string,
+    fileUrl: string | null,
+    type: "text" | "attachement" | "voice",
+    fileSize: number | null,
+  ) => Promise<void>;
   disabled?: boolean;
 }
 
@@ -28,6 +33,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
 
   return (
     <div className="bg-white border-t border-gray-200 p-4">
+      <h1>this is the message inpyt hlleo</h1>
       <form onSubmit={handleSubmit} className="flex items-center gap-2">
         <button
           type="button"
