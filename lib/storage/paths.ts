@@ -3,9 +3,9 @@ export const BUCKETS = {
 } as const;
 
 export const storagePaths = {
-  voice: (jobId: string, senderId: string) =>
-    `${jobId}/${senderId}/voices/${Date.now()}.webm`,
+  voice: (conversationId: string, senderId: string) =>
+    `${conversationId}/${senderId}/voices/${Date.now()}.webm`,
 
-  attachment: (jobId: string, senderId: string, fileName: string) =>
-    `${jobId}/${senderId}/attachments/${Date.now()}-${fileName}`,
+  attachment: (conversationId: string, senderId: string, fileName: string) =>
+    `${conversationId}/${senderId}/attachments/${Date.now()}-${fileName}`,
 };

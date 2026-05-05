@@ -126,7 +126,7 @@ export function ApplicationCard({
           {app.job.urgency && (
             <span
               className={`px-2 py-0.5 text-xs rounded-full ${getUrgencyColor(
-                app.job.urgency
+                app.job.urgency,
               )}`}
             >
               {app.job.urgency}
@@ -167,7 +167,7 @@ export function ApplicationCard({
                 <div className="relative">
                   <div
                     className={`w-10 h-10 rounded-full bg-linear-to-r ${getAvatarColor(
-                      app.job.customer_id
+                      app.job.customer_id,
                     )} flex items-center justify-center text-white text-sm font-medium shadow-md overflow-hidden`}
                   >
                     {isBusiness && app.customer.company_logo_url ? (

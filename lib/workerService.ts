@@ -8,6 +8,7 @@ import {
 
 export const workerService = {
   // Récupérer les détails complets d'un worker
+
   async getWorkerDetails(workerId: string): Promise<WorkerDetails | null> {
     try {
       const { data, error } = await supabase
@@ -55,7 +56,7 @@ export const workerService = {
           
           created_at,
           updated_at
-        `
+        `,
         )
         .eq("id", workerId)
         .eq("role", "worker")
@@ -73,7 +74,7 @@ export const workerService = {
   // Récupérer les avis du worker
   async getWorkerReviews(
     workerId: string,
-    limit = 10
+    limit = 10,
   ): Promise<WorkerReview[]> {
     try {
       const { data, error } = await supabase
@@ -88,7 +89,7 @@ export const workerService = {
           job:job_id (
             title
           )
-        `
+        `,
         )
         .eq("worker_id", workerId)
         .order("created_at", { ascending: false })
@@ -134,7 +135,7 @@ export const workerService = {
 
   // Récupérer les certifications du worker
   async getWorkerCertifications(
-    workerId: string
+    workerId: string,
   ): Promise<WorkerCertification[]> {
     try {
       const { data, error } = await supabase
@@ -148,7 +149,7 @@ export const workerService = {
     } catch (error) {
       console.error(
         "Erreur lors de la récupération des certifications:",
-        error
+        error,
       );
       return [];
     }

@@ -1,17 +1,10 @@
 import { supabase } from "@/lib/supabase";
-import { Conversation, Message, SendMessageData } from "@/types/messages.types";
+import { Message } from "@/modules/chat/types/chat.types";
+import { Conversation, SendMessageData } from "@/types/messages.types";
 import { Profile } from "@/types/profile";
 
 export const messageService = {
   // Récupérer l'utilisateur courant
-  async getCurrentUser() {
-    const {
-      data: { user },
-      error,
-    } = await supabase.auth.getUser();
-    if (error) throw error;
-    return user;
-  },
 
   // Récupérer toutes les conversations
   async fetchConversations(userId: string): Promise<Conversation[]> {
@@ -35,7 +28,7 @@ export const messageService = {
         hourly_rate,
         created_at,
         category
-      `
+      `,
       )
       .or(`customer_id.eq.${userId},worker_id.eq.${userId}`)
       .not("worker_id", "is", null)
@@ -75,7 +68,7 @@ export const messageService = {
           hourly_rate: job.hourly_rate,
           category: job.category,
         };
-      })
+      }),
     );
 
     return conversations as Conversation[];
@@ -141,7 +134,7 @@ export const messageService = {
   // Récupérer les messages d'une conversation
   async fetchMessages(
     jobId: string,
-    currentUserId: string
+    currentUserId: string,
   ): Promise<Message[]> {
     try {
       const { data, error } = await supabase
@@ -196,7 +189,7 @@ export const messageService = {
           table: "messages",
           filter: `job_id=eq.${jobId}`,
         },
-        (payload) => callback(payload.new as Message)
+        (payload) => callback(payload.new as Message),
       )
       .subscribe();
   },

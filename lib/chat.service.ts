@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import { Message, Job, Customer } from "@/types/chat";
+import { Message, Job, Customer } from "@/modules/chat/types/chat.types";
 
 export const chatService = {
   async getJob(jobId: string): Promise<Job> {
@@ -72,11 +72,11 @@ export const chatService = {
     return data;
   },
 
-  async getMessages(jobId: string): Promise<Message[]> {
+  async getMessages(conversationId: string): Promise<Message[]> {
     const { data, error } = await supabase
       .from("messages")
       .select("*")
-      .eq("job_id", jobId)
+      .eq("conversation_id", conversationId)
       .order("created_at", { ascending: true });
 
     if (error) throw error;
@@ -84,23 +84,27 @@ export const chatService = {
   },
 
   async sendMessage(
-    jobId: string,
+    conversationId: string,
     senderId: string,
     content: string | null,
     file_url: string | null,
     file_name: string | null,
     file_size: number | null,
+    waveFormData: number[] | null,
+    duration: number | null,
     type: "text" | "audio" | "attachement" = "text",
   ) {
     const { error } = await supabase.from("messages").insert([
       {
-        job_id: jobId,
+        conversation_id: conversationId,
         sender_id: senderId,
         content: content?.trim() || null,
         read: false,
         file_url: file_url,
         file_name: file_name,
         file_size: file_size,
+        waveform: waveFormData,
+        duration: duration,
         type: type,
       },
     ]);
@@ -109,28 +113,36 @@ export const chatService = {
   },
 
   async applyForJob(jobId: string, workerId: string) {
-    const { error } = await supabase.from("applications").insert([
-      {
-        job_id: jobId,
-        worker_id: workerId,
-        message: "",
-        status: "pending",
-      },
-    ]);
+    const { data, error } = await supabase
+      .from("applications")
+      .insert([
+        {
+          job_id: jobId,
+          worker_id: workerId,
+          message: "",
+          status: "pending",
+        },
+      ])
+      .select()
+      .single();
 
     if (error) throw error;
+    return data; // 👈 now it returns the created row
   },
 
-  subscribeToMessages(jobId: string, callback: (message: Message) => void) {
+  subscribeToMessages(
+    conversationId: string,
+    callback: (message: Message) => void,
+  ) {
     return supabase
-      .channel(`messages:${jobId}`)
+      .channel(`messages:${conversationId}`)
       .on(
         "postgres_changes",
         {
           event: "INSERT",
           schema: "public",
           table: "messages",
-          filter: `job_id=eq.${jobId}`,
+          filter: `conversation_id=eq.${conversationId}`,
         },
         (payload) => {
           callback(payload.new as Message);

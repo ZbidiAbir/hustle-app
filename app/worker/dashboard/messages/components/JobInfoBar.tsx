@@ -1,4 +1,4 @@
-import { Conversation } from "@/types/chat";
+import { Conversation } from "@/modules/chat/types/chat.types";
 import {
   MapPin,
   Briefcase,
@@ -25,7 +25,7 @@ export function JobInfoBar({ conversation }: JobInfoBarProps) {
         {/* Status badge */}
         <span
           className={`px-3 py-1 rounded-full text-xs font-medium border ${getJobStatusColor(
-            conversation.status
+            conversation.status,
           )}`}
         >
           {getJobStatusText(conversation.status)}
@@ -41,7 +41,7 @@ export function JobInfoBar({ conversation }: JobInfoBarProps) {
         {conversation.jobDetails?.urgency && (
           <div
             className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs ${getUrgencyColor(
-              conversation.jobDetails.urgency
+              conversation.jobDetails.urgency,
             )}`}
           >
             <Zap className="w-3 h-3" />

@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
-import { Message } from "@/types/chat";
+import { Message } from "@/modules/chat/types/chat.types";
 import { chatService } from "../chat.service";
 
 export function useMessages(
   jobId: string,
   currentUserId: string,
-  customerName: string
+  customerName: string,
 ) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
@@ -77,7 +77,7 @@ export function useMessages(
         setSending(false);
       }
     },
-    [jobId, currentUserId]
+    [jobId, currentUserId],
   );
 
   const markAllAsRead = useCallback(async () => {

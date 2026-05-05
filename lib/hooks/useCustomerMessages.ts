@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Conversation, Message } from "@/types/messages.types";
 import { messageService } from "../messages.service";
+import { getCurrentUser } from "../common/currentUser";
 
 export const useMessages = () => {
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -28,7 +29,7 @@ export const useMessages = () => {
 
   const init = async () => {
     try {
-      const user = await messageService.getCurrentUser();
+      const user = await getCurrentUser();
       if (!user) {
         router.push("/login");
         return;

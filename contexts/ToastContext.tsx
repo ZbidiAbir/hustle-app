@@ -1,6 +1,6 @@
 "use client";
 
-import Toast, { ToastType } from "@/app/components/Toast";
+import Toast, { ToastType } from "@/components/Toast";
 import {
   createContext,
   useContext,
@@ -36,7 +36,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       console.log(`🔔 Showing toast: ${message}`, { type, duration, id });
       setToasts((prev) => [...prev, { id, message, type, duration }]);
     },
-    []
+    [],
   );
 
   const removeToast = useCallback((id: string) => {
@@ -49,7 +49,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       console.log(`✅ Success toast: ${message}`);
       showToast(message, "success", duration);
     },
-    [showToast]
+    [showToast],
   );
 
   const error = useCallback(
@@ -57,7 +57,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       console.log(`❌ Error toast: ${message}`);
       showToast(message, "error", duration);
     },
-    [showToast]
+    [showToast],
   );
 
   const info = useCallback(
@@ -65,7 +65,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       console.log(`ℹ️ Info toast: ${message}`);
       showToast(message, "info", duration);
     },
-    [showToast]
+    [showToast],
   );
 
   const warning = useCallback(
@@ -73,7 +73,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       console.log(`⚠️ Warning toast: ${message}`);
       showToast(message, "warning", duration);
     },
-    [showToast]
+    [showToast],
   );
 
   return (

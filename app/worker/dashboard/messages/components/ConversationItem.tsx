@@ -1,11 +1,11 @@
-import { Conversation } from "@/types/chat";
+import { formatConversationTime } from "@/modules/chat/utils/chat";
+import { Conversation } from "@/modules/chat/types/chat.types";
 import {
   getAvatarColor,
   getCustomerDisplayName,
   getCustomerAvatar,
-  formatConversationTime,
 } from "@/utils/chat.utils";
-import { Star, Check, Building2 } from "lucide-react";
+import { Check } from "lucide-react";
 
 interface ConversationItemProps {
   conversation: Conversation;

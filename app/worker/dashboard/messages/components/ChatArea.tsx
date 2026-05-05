@@ -1,15 +1,19 @@
-import { Conversation, Customer } from "@/types/chat";
+import {
+  Conversation,
+  Customer,
+  Message,
+} from "@/modules/chat/types/chat.types";
 import { ChatHeader } from "./ChatHeader";
 import { JobInfoBar } from "./JobInfoBar";
-import { MessageList } from "./MessageList";
 import { CompanyDetails } from "./CompanyDetails";
-import { EmptyChat } from "./EmptyChat";
-import MessageInput from "@/app/components/MessageInput";
+import MessageInput from "@/components/chat/MessageInput";
+import { MessageList } from "@/components/chat/MessageList";
+import { EmptyChat } from "@/components/chat/EmptyChat";
 
 interface ChatAreaProps {
   conversation: Conversation | null;
   customer: Customer | null;
-  messages: any[];
+  messages: Message[];
   loading: boolean;
   sending: boolean;
   currentUserId: string;

@@ -1,4 +1,4 @@
-import { Conversation, Customer } from "@/types/chat";
+import { Conversation, Customer } from "@/modules/chat/types/chat.types";
 import {
   ChevronLeft,
   Phone,

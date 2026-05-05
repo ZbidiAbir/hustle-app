@@ -19,10 +19,10 @@ import {
   Home as HomeIcon,
   FlagTriangleRight,
 } from "lucide-react";
-import NotificationBell from "@/app/components/NotificationBell";
+import NotificationBell from "@/components/NotificationBell";
 import { ToastProvider } from "@/contexts/ToastContext";
 import { Profile } from "@/types/profile";
-import NotificationToast from "@/app/components/NotificationToast";
+import NotificationToast from "@/components/NotificationToast";
 
 export default function CustomerLayout({
   children,
@@ -246,7 +246,7 @@ export default function CustomerLayout({
                                 <span>
                                   {getAccountTypeLabel(
                                     //@ts-ignore
-                                    user.account_type
+                                    user.account_type,
                                   )}
                                 </span>
                               </div>

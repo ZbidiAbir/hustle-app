@@ -11,7 +11,7 @@ import { ChatHeader } from "./components/ChatHeader";
 import { JobInfoBar } from "./components/JobInfoBar";
 import { MessageBubble } from "./components/MessageBubble";
 import { messageService } from "@/lib/messages.service";
-import MessageInput from "@/app/components/MessageInput";
+import MessageInput from "@/components/chat/MessageInput";
 
 export default function MessagesPage() {
   const [searchTerm, setSearchTerm] = useState("");

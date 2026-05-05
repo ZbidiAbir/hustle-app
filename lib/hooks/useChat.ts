@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { Customer, Job, Message } from "@/types/chat";
+import { Customer, Job, Message } from "@/modules/chat/types/chat.types";
 import { chatService } from "../chat.service";
 // import { User as SupabaseUser } from "@supabase/supabase-js"; // Importer le type Supabase
 
@@ -14,7 +14,7 @@ type AppUser = {
   };
 };
 
-export function useChat(jobId: string) {
+export function useChat(conversationId: string) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [job, setJob] = useState<Job | null>(null);
   const [worker, setWorker] = useState<Worker | null>(null);
@@ -48,16 +48,19 @@ export function useChat(jobId: string) {
         };
         setCurrentUser(appUser);
 
-        const jobData = await chatService.getJob(jobId);
+        const jobData = await chatService.getJob(conversationId);
         setJob(jobData as Job); // Cast explicite
 
         const customerData = await chatService.getCustomer(jobData.customer_id);
         setCustomer(customerData);
 
-        const application = await chatService.getApplication(jobId, user.id);
+        const application = await chatService.getApplication(
+          jobData.id,
+          user.id,
+        );
         setHasApplied(!!application);
 
-        const messagesData = await chatService.getMessages(jobId);
+        const messagesData = await chatService.getMessages(conversationId);
         setMessages(messagesData);
       } catch (err: any) {
         setError(err.message || "An error occurred");
@@ -66,20 +69,23 @@ export function useChat(jobId: string) {
       }
     };
 
-    if (jobId) init();
-  }, [jobId, router]);
+    if (conversationId) init();
+  }, [conversationId, router]);
 
   useEffect(() => {
-    if (!jobId || !currentUser) return;
+    if (!conversationId || !currentUser) return;
 
-    const subscription = chatService.subscribeToMessages(jobId, (newMsg) => {
-      setMessages((prev) => [...prev, newMsg]);
-    });
+    const subscription = chatService.subscribeToMessages(
+      conversationId,
+      (newMsg) => {
+        setMessages((prev) => [...prev, newMsg]);
+      },
+    );
 
     return () => {
       subscription.unsubscribe();
     };
-  }, [jobId, currentUser]);
+  }, [conversationId, currentUser]);
 
   const sendMessage = useCallback(
     async (content: string) => {
@@ -87,26 +93,26 @@ export function useChat(jobId: string) {
 
       setSending(true);
       try {
-        await chatService.sendMessage(jobId, currentUser.id, content);
+        await chatService.sendMessage(conversationId, currentUser.id, content);
       } catch (err: any) {
         setError(err.message);
       } finally {
         setSending(false);
       }
     },
-    [jobId, currentUser, job],
+    [conversationId, currentUser, job],
   );
 
   const applyForJob = useCallback(async () => {
     if (!currentUser || !job) return;
 
     try {
-      await chatService.applyForJob(jobId, currentUser.id);
+      await chatService.applyForJob(conversationId, currentUser.id);
       setHasApplied(true);
     } catch (err: any) {
       setError(err.message);
     }
-  }, [jobId, currentUser, job]);
+  }, [conversationId, currentUser, job]);
 
   return {
     messages,

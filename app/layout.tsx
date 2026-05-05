@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import { Inter, Geist } from "next/font/google";
-import "./globals.css";
 import { ToastProvider } from "@/contexts/ToastContext";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
+import { Toaster } from "@/components/ui/sonner";
+import "./globals.css";
 
-const geist = Geist({subsets:['latin'],variable:'--font-sans'});
+const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -24,6 +25,7 @@ export default function RootLayout({
       <AuthProvider>
         <body className={inter.className}>
           <ToastProvider>{children}</ToastProvider>
+          <Toaster />
         </body>
       </AuthProvider>
     </html>

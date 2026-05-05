@@ -11,7 +11,7 @@ import {
   Verified,
   Award,
 } from "lucide-react";
-import { Customer } from "@/types/chat";
+import { Customer } from "@/modules/chat/types/chat.types";
 
 interface CompanyDetailsProps {
   customer: Customer;

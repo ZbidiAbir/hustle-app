@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { Job } from "@/types/job";
 import { useJobCard } from "@/lib/hooks/useJobCard";
+import ChatButton from "@/components/buttons/ChatButton";
 
 interface JobCardProps {
   job: Job;
@@ -139,7 +140,7 @@ export function JobCard({ job, onChatClick }: JobCardProps) {
               {getCustomerAvatar(job.customer) || (
                 <div
                   className={`w-8 h-8 rounded-full bg-linear-to-r ${getAvatarColor(
-                    job.customer_id
+                    job.customer_id,
                   )} flex items-center justify-center text-white text-xs font-medium shadow-sm`}
                 >
                   {getCustomerDisplayName(job.customer).charAt(0).toUpperCase()}
@@ -188,13 +189,7 @@ export function JobCard({ job, onChatClick }: JobCardProps) {
 
         {/* Actions */}
         <div className="flex gap-2">
-          <button
-            onClick={() => onChatClick(job.id)}
-            className="flex-1 px-3 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition flex items-center justify-center gap-1.5"
-          >
-            <MessageSquare className="w-4 h-4" />
-            Chat
-          </button>
+          <ChatButton jobId={job.id} participants={[job.customer_id]} />
           <Link
             href={`/worker/dashboard/job/${job.id}`}
             className="flex-1 px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition flex items-center justify-center gap-1.5"

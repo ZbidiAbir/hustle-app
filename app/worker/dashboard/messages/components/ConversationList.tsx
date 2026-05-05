@@ -1,4 +1,4 @@
-import { Conversation } from "@/types/chat";
+import { Conversation } from "@/modules/chat/types/chat.types";
 import { ConversationItem } from "./ConversationItem";
 import { Search, RefreshCw, Loader2 } from "lucide-react";
 import { EmptyConversations } from "./EmptyConversations";

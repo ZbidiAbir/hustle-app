@@ -17,9 +17,9 @@ import {
   ChevronDown,
   FlagTriangleRight,
 } from "lucide-react";
-import NotificationBell from "@/app/components/NotificationBell";
+import NotificationBell from "@/components/NotificationBell";
 import { ToastProvider } from "@/contexts/ToastContext";
-import NotificationToast from "@/app/components/NotificationToast";
+import NotificationToast from "@/components/NotificationToast";
 
 type User = {
   full_name: string;

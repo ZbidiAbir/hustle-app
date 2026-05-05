@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
-import { Conversation, Worker } from "@/types/chat";
+import { Conversation, Worker } from "@/modules/chat/types/chat.types";
 import { getWorkerDisplayName } from "@/utils/chat.utils";
 
 export function useCustomerConversations(userId: string) {
@@ -18,7 +18,7 @@ export function useCustomerConversations(userId: string) {
         const { data: jobsData, error: jobsError } = await supabase
           .from("jobs")
           .select(
-            "id, title, status, price, location, worker_id, description, images, urgency, level_required, skills, created_at"
+            "id, title, status, price, location, worker_id, description, images, urgency, level_required, skills, created_at",
           )
           .eq("customer_id", userId)
           .not("worker_id", "is", null)
@@ -98,13 +98,13 @@ export function useCustomerConversations(userId: string) {
                 skills: job.skills,
               },
             };
-          })
+          }),
         );
 
         setConversations(
           //@ts-ignore
 
-          conversationsData
+          conversationsData,
         );
       } catch (error) {
         console.error("Error fetching conversations:", error);
@@ -113,7 +113,7 @@ export function useCustomerConversations(userId: string) {
         setIsRefreshing(false);
       }
     },
-    [userId]
+    [userId],
   );
 
   useEffect(() => {
@@ -127,7 +127,7 @@ export function useCustomerConversations(userId: string) {
         getWorkerDisplayName(conv.worker)
           .toLowerCase()
           .includes(searchTerm.toLowerCase()) ||
-        conv.worker.job_title?.toLowerCase().includes(searchTerm.toLowerCase())
+        conv.worker.job_title?.toLowerCase().includes(searchTerm.toLowerCase()),
     );
   }, [conversations, searchTerm]);
 
@@ -139,7 +139,7 @@ export function useCustomerConversations(userId: string) {
         .eq("job_id", conversationId)
         .neq("sender_id", userId);
     },
-    [userId]
+    [userId],
   );
 
   return {

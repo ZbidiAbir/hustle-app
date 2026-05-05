@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
-import { Conversation, Customer } from "@/types/chat";
+import { Conversation, Customer } from "@/modules/chat/types/chat.types";
 import { getCustomerDisplayName } from "@/utils/chat.utils";
 
 export function useConversations(userId: string) {
@@ -18,7 +18,7 @@ export function useConversations(userId: string) {
         const { data: jobsData, error: jobsError } = await supabase
           .from("jobs")
           .select(
-            "id, title, status, price, location, customer_id, description, images, urgency, level_required, skills, created_at, category, pay_type, fixed_rate,min_rate,max_rate,hourly_rate"
+            "id, title, status, price, location, customer_id, description, images, urgency, level_required, skills, created_at, category, pay_type, fixed_rate,min_rate,max_rate,hourly_rate",
           )
           .eq("worker_id", userId)
           .order("created_at", { ascending: false });
@@ -38,7 +38,7 @@ export function useConversations(userId: string) {
           .in("id", customerIds);
 
         const customersMap = new Map(
-          customersData?.map((c) => [c.id, c]) || []
+          customersData?.map((c) => [c.id, c]) || [],
         );
 
         // Build conversations with last message and unread count
@@ -101,12 +101,12 @@ export function useConversations(userId: string) {
                 skills: job.skills,
               },
             };
-          })
+          }),
         );
 
         setConversations(
           //@ts-ignore
-          conversationsData
+          conversationsData,
         );
       } catch (error) {
         console.error("Error fetching conversations:", error);
@@ -115,7 +115,7 @@ export function useConversations(userId: string) {
         setIsRefreshing(false);
       }
     },
-    [userId]
+    [userId],
   );
 
   useEffect(() => {
@@ -131,7 +131,7 @@ export function useConversations(userId: string) {
           .includes(searchTerm.toLowerCase()) ||
         conv.customer.company_name
           ?.toLowerCase()
-          .includes(searchTerm.toLowerCase())
+          .includes(searchTerm.toLowerCase()),
     );
   }, [conversations, searchTerm]);
 
@@ -143,7 +143,7 @@ export function useConversations(userId: string) {
         .eq("job_id", conversationId)
         .neq("sender_id", userId);
     },
-    [userId]
+    [userId],
   );
 
   return {

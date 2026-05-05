@@ -7,7 +7,7 @@ import { ChatLayout } from "./components/ChatLayout";
 import { ConversationList } from "./components/ConversationList";
 import { ChatArea } from "./components/ChatArea";
 import { LoadingState } from "./components/LoadingState";
-import { Conversation } from "@/types/chat";
+import { Conversation } from "@/modules/chat/types/chat.types";
 import { useConversations } from "@/lib/hooks/useConversations";
 import { useMessages } from "@/lib/hooks/useMessages";
 
